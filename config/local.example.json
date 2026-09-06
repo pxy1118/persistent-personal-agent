@@ -1,0 +1,11 @@
+{
+  "modelBaseUrl": "http://127.0.0.1:8080/v1",
+  "modelId": null,
+  "contextWindow": 32768,
+  "maxTokens": 4096,
+  "reflectionMaxTokens": 4096,
+  "reflectionTimeoutMs": 60000,
+  "memoryBudgetChars": 6000,
+  "extensions": [],
+  "skills": []
+}
