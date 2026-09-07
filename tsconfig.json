@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2023", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "target": "ES2023", "module": "NodeNext", "moduleResolution": "NodeNext", "jsx": "react-jsx",
     "strict": true, "noEmit": true, "noUnusedLocals": true, "noUnusedParameters": true, "esModuleInterop": true, "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "scripts/**/*.ts"]
 }

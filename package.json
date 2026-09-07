@@ -6,27 +6,35 @@
     "node": ">=24.11.1"
   },
   "scripts": {
-    "start": "tsx src/cli.ts",
-    "doctor": "tsx src/cli.ts doctor",
+    "migrate:letta": "tsx src/letta-cli.ts migrate",
+    "start:letta": "tsx src/letta-cli.ts",
+    "doctor:letta": "tsx src/letta-cli.ts doctor",
+    "backup:letta": "tsx src/letta-cli.ts backup",
+    "restore:letta": "tsx src/letta-cli.ts restore",
+    "test:letta": "tsx --test tests/letta.test.ts",
+    "smoke:letta:integration": "tsx scripts/letta-integration.ts",
+    "smoke:letta": "tsx scripts/letta-smoke.ts",
+    "start": "tsx src/ppa-terminal.ts",
+    "smoke:interface": "tsx scripts/ppa-integration.ts",
+    "smoke:terminal": "tsx scripts/ppa-tui-smoke.ts",
+    "model": "tsx src/letta-cli.ts model",
+    "doctor": "tsx src/letta-cli.ts doctor",
     "build": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "smoke:live": "tsx scripts/live-smoke.ts",
-    "smoke:rhythm": "tsx scripts/live-rhythm.ts",
-    "smoke:conversation": "tsx scripts/live-conversation.ts",
-    "backup": "tsx src/cli.ts backup",
-    "restore": "tsx src/cli.ts restore",
-    "setup:tools": "tsx src/cli.ts setup-tools",
-    "identity:apply": "tsx src/cli.ts identity-apply"
+    "smoke:live": "tsx scripts/letta-smoke.ts",
+    "backup": "tsx src/letta-cli.ts backup",
+    "restore": "tsx src/letta-cli.ts restore"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.85.0",
-    "@earendil-works/pi-coding-agent": "0.85.0",
-    "@earendil-works/pi-server": "0.85.0",
-    "@earendil-works/pi-tui": "0.85.0",
-    "typebox": "1.3.7"
+    "@letta-ai/letta-code": "0.31.12",
+    "ppa-ink": "npm:ink@^7.1.1",
+    "react": "^19.2.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/react": "^19.2.18",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   }

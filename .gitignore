@@ -1,6 +1,7 @@
 node_modules/
 .ppa/
 config/local.json
+config/models.json
 exports/
 *.lnk
 *.tsbuildinfo

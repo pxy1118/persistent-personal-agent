@@ -1,205 +1,151 @@
 # Persistent Personal Agent
 
-一个以长期陪伴为核心的本地终端助手。Pi 负责对话、模型、会话与原生工具；PPA 保存身份、有效记忆、授权和执行记录。新建会话、更换模型和重启不会重新创建助手。
-
-仓库内置一套通用示例人格（`config/identity.json`，不含任何个人信息），可按需编辑；身份与记忆数据保存在本地 `.ppa/` 目录，不会被提交。
-
-## 项目人格
-
-默认人格保存在 `config/identity.json`。新助手首次创建时从项目配置写入 SQLite；后续启动只读取数据库，不会用配置文件覆盖用户在 `/identity edit` 做出的修改。编辑项目配置后，如需主动应用到现有助手，先退出程序再运行：
-
-```powershell
-npm run identity:apply
-```
-
-此命令持有实例锁，变化前自动备份，只新增人格版本；重复应用相同内容不新增版本，不修改记忆、Agent ID 或授权。修改前建议先备份 `config/identity.json`。`exports/` 目录包含本机迁移导出件，不会被提交，也不属于仓库内容。
-
-## 当前状态
-
-截至 2026-09-06：
-
-| 验证 | 状态 |
-| --- | --- |
-| TypeScript 严格类型检查 | 通过 |
-| 自动化测试 | 30 项通过（含表达/思考顺序、推理传输、取消、超时和思考标记过滤） |
-| 真实 Pi SDK + 模拟 HTTP/SSE 模型 | 中文流式、文件写入、PowerShell、扩展授权、记忆、压缩后投影、会话恢复、模型切换、取消、忘记隔离通过 |
-| Windows 真实终端 PTY | 中文回复、`/identity`、拦截 `!` 快捷 Shell、正常退出通过 |
-| 正式启动入口 | 首次初始化、模型离线时保留身份、释放实例锁通过 |
-| 真实子进程异常退出 | 派发前、派发后、已有副作用但未记录结果三个场景通过 |
-| 备份恢复 | 校验、隔离恢复、撤销原授权、拒绝损坏备份通过 |
-| 本地真实模型 | 本地 Qwen 量化模型：5 项基础冒烟通过；最新 7 项自然记忆专项通过，未完成全面验收 |
-| 说话/思考节奏 | 2026-09-06 最新 3 项真实模型顺序测试通过；含实际推理通道检查，非自动选择成功率保证 |
-
-模拟端点只证明集成链路正确，不证明自然记忆判断、长聊人格一致性、延迟或所有模型的工具兼容性。尚未开展长期陪伴体验验收和真实模型长上下文压缩验收。
+拥有独立中文终端界面的本地个人助手。PPA 提供聊天、会话、人格/记忆编辑、模型配置切换和工具审批；Letta 在后台管理 Agent 执行与持久状态。默认界面显示 PPA 和助手自己的名字，不再启动 Letta 的终端界面。
 
 ## 启动
 
-要求 Node.js **24.11.1 或更高的 24.x**、npm，以及你自行运行的 OpenAI-compatible 模型服务。
+要求 Node.js 24.11.1 或更高的 24.x、npm、Git，以及已启动且支持 Chat Completions 和工具调用的本地模型服务。
 
 ```powershell
-Set-Location -LiteralPath '<你的项目目录>'
 npm ci
-npm run setup:tools
+npm run migrate:letta   # 首次初始化或从旧 PPA 迁移；重复执行不会覆盖已完成的导入
 npm run doctor
 npm start
 ```
 
-首次使用前需要安装依赖（`npm ci`）并准备搜索工具（`npm run setup:tools`，所需的 `fd`/`rg` 保存在 PPA 私有目录，不修改系统 PATH）。也可以双击 `start.cmd`。PPA 不自动启动、停止或改写你的模型服务。
+也可双击 `start.cmd`，仍通过 `start.ps1` 和 `npm start` 启动 PPA 终端。默认复用已有固定 Agent 和会话，不重新导入人格，不登录云端，不自动启动、停止或更改模型服务。模型离线时仍可打开终端查看和编辑记忆，聊天会提示先启动模型并 `/reconnect`。`npm run start:letta` 保留为显式使用原生终端的维护入口。
 
-首次启动会询问名字、人格基调和相处方式，全部回车即可使用当前人格或已保存的用户设定。初始默认工作区是 `.ppa/workspace`，初始化同时授予这个私有目录的读写权限。模型连接失败不会丢失已保存的身份。
+PPA 在运行期间启动一个受认证保护、仅监听本机随机端口的后台子进程，通过官方 App Server 接口交互；退出时关闭它，不安装系统服务、不提供网页、不创建常驻任务。后台输出写入 `.ppa/ppa-runtime.log`，不会混入聊天。
 
-`npm run doctor` 检查端点和可用模型列表；成功也不等于聊天验收通过。模型离线返回退出码 2。聊天需要真正的交互终端，不能使用管道输入替代 TUI。
+依赖固定为 `@letta-ai/letta-code@0.31.12`，不依赖全局安装，不修改上游或 node_modules。Letta 自身仍间接使用 pi-ai；本项目已移除 Pi Coding Agent 运行时和直接 Pi 依赖。
 
-## 配置
+## 模型与数据
 
-无需配置文件即可使用默认端点。需要更改时，复制 `config/local.example.json` 为 `config/local.json`，例如：
+配置示例在 `config/local.example.json`，可用 `config/local.json` 覆盖：
 
 ```json
 {
   "modelBaseUrl": "http://127.0.0.1:8080/v1",
   "modelId": null,
   "contextWindow": 32768,
-  "maxTokens": 4096,
-  "memoryBudgetChars": 6000,
-  "extensions": [],
-  "skills": []
+  "maxTokens": 4096
 }
 ```
 
-- `modelId: null`：首次从端点选择首个模型；之后优先使用仍可用的上次选择。`/model` 可以切换服务暴露的模型。
-- `contextWindow` 必须与模型服务实际配置一致。默认 32768 不意味着 PPA 会把你的服务改成 32K。
-- 首版按文本、非 reasoning OpenAI-compatible 模型注册；特殊工具模板、thinking 字段或非兼容厂商 API 可能需要后续适配。
-- `PPA_MODEL_API_KEY`：可选环境变量；密钥不写进示例配置或长期记忆。远端 `modelBaseUrl` 会把上下文发送到该服务，不再是纯本地推理。
-- `PPA_DATA_DIR`：可选的独立数据目录；默认项目下 `.ppa`。
-- `extensions`、`skills`：仅加载这里显式列出的本地路径，相对路径相对于项目根目录。禁用默认全局和工作区自动发现。
+`modelId: null` 在初始化或选择该模型配置时使用服务的首个模型，后续启动沿用已保存选择。终端 `/model` 列出项目配置，`/model ornith` 或 `/model qwen3.8` 在空闲时切换；人格、记忆和当前会话保留。contextWindow 必须与模型服务匹配，PPA 不调整服务端上下文。初始化使用对应 0.31.12 的本地状态适配器，运行中的编辑和切换通过原生接口完成；升级版本前须重新验证接口。
 
-普通启动设置进程内 `PI_OFFLINE=1`，关闭 Pi 的启动目录刷新、更新检查与工具自动下载；这不阻止用户配置的模型请求，也不限制获准 Shell 的网络访问。`setup:tools` 单独使用 Pi 的原生安装逻辑准备 `fd`/`rg`；缺少系统工具时保存在 `.ppa/pi/bin`，不修改系统 PATH。
+`PPA_MODEL_API_KEY` 是可选环境变量，不写进报告、记忆或仓库。Letta 自身将 provider 凭据保存在本机，文件未加密。远程 modelBaseUrl 会把上下文发送到该服务。
 
-Pi 固定为 `@earendil-works/pi-coding-agent@0.85.0`。这个发布包的公共入口引用了未声明的 `@earendil-works/pi-server`，因此项目显式安装同版本以修复导入，不启动服务器，不修改 `node_modules`。实际依赖由 `package-lock.json` 锁定。
+### 模型配置与切换
 
-## 日常使用
+预置模型配置在 `config/models.example.json`，当前包含：
 
-直接聊天即可。例如：“我喜欢清淡一些的菜”“刚才那个偏好改一下”。姓名或人格修改请通过 `/identity edit` 确认；普通事实和偏好由模型通过记忆工具提议。
+| 配置名 | 地址 | 模型 ID |
+| --- | --- | --- |
+| `qwen3.8` | `http://127.0.0.1:8080/v1` | 启动时取该服务返回的首个模型 |
+| `ornith` | `http://127.0.0.1:8000/v1` | `Ornith-1.5` |
 
-| 命令 | 用途 |
-| --- | --- |
-| `/new` | 新对话，保留身份和有效记忆 |
-| `/resume` | 恢复有效 PPA 会话，归档或外部会话会被拒绝 |
-| `/model` | Pi 原生模型选择 |
-| Escape | 中止当前生成；已经产生的副作用不撤销 |
-| `/quit` | 正常退出；再次用 `npm start` 恢复 |
-| `/identity` / `/identity edit` | 查看人格 / 创建人格新版本 |
-| `/memory` / `/memory search 茶` | 查看最近有效记忆 / 检索 |
-| `/memory pending` | 查看待确认候选 |
-| `/memory approve ID` / `/memory reject ID` | 接受或拒绝候选 |
-| `/forget ID` | 确认忘记，归档旧会话，开始干净会话 |
-| `/memory withdrawn` / `/memory restore ID` | 查看已撤回条目 / 明确重新记住 |
-| `/permissions` | 查看有效授权 |
-| `/permissions grant read D:\资料` | 授予指定现有目录的读取权限 |
-| `/permissions grant write D:\输出` | 授予指定现有目录的写入权限 |
-| `/permissions shell` | 显式授予当前会话宿主 Shell 权限，重启失效 |
-| `/permissions revoke ID` | 撤销授权 |
-| `/actions` / `/actions unknown` | 查看执行记录 / 待核实动作 |
-| `/actions resolve ID succeeded 核实依据` | 人工确认已完成；也可使用 `failed` |
-| `/backup` | 空闲时创建一致性备份 |
-
-命令中的 ID 来自对应列表。路径含空格时，在目录参数中直接输入完整路径，**不加引号**。`/memory approve` 只应批准你已查看认可的候选。
-
-首版不接受回复期间插入新的聊天消息：先按 Escape 或等待结束，避免记忆证据串轮。Pi 原生帮助会显示一些编码助手功能；`!`/`!!`、分叉、历史树重放和外部会话导入目前被 PPA 拦截。退出时 Pi 显示的原生恢复命令不包含 PPA，**应使用本项目启动入口恢复**。
-
-## 记忆与人格怎样工作
-
-SQLite 保存稳定 `agent_id`、人格版本、记忆、来源、候选、撤回记录、授权和执行账本。身份与模型 ID、Pi 会话 ID 分离。
-
-模型负责理解语义和提出分类；PPA 验证当前用户来源、逐字证据、范围、版本和撤回记录，然后事务提交。普通明确事实可以立即提交；推断、敏感内容、冲突及修订进入候选，使用宿主确认界面或命令审核。语义分类不是形式化证明，仍可能误记，因此保留查看、拒绝和纠正入口。
-
-候选明确展示后，紧接着回复“对，就这样记”或“不要记”即可处理。程序解析主题对应的 ID 和当前版本，记录确认消息来源；普通“好”、引用、多个候选、取消、隔了一轮话题或重启后都不会自动确认。无法直接确认时可用 `/memory` 查看。终端的 PPA 提交提示反映实际持久状态，模型的口头承诺不能替代它。模型检索只返回有效内容，不再返回可能含旧事实的来源证据；原始证据仍保存在 SQLite 供审查。
-
-关系首先表示为称呼、共同经历、相处约定和交流偏好。没有亲密度分数，没有后台人格演化，也没有定时主动发消息。
-
-每次模型请求动态选取相关有效记忆，采用词项及中文双字检索，按相关性排序并限制字符预算。投影只影响本次请求，不不断追加到会话文件；模型可调用 `search` 补查。没有向量数据库，语义表达差异较大时召回可能不足。Pi 负责会话压缩，保留历史和输出预留量按配置上下文调整，避免直接套用过大的默认保留量；摘要不能直接作为长期记忆来源。
-
-忘记会提高全局记忆边界版本：
-
-1. 撤回条目，旧来源和待处理候选失效。
-2. 忘记之前的所有会话转为本地只读历史，不能恢复、分叉或压缩进新上下文。
-3. 当前轮次后续调用使用干净上下文，禁止继续执行旧工具，再创建新会话。
-4. 新会话只注入仍有效的记忆；旧来源不能再次提交。重新记住需用户明确确认。
-
-这里的“忘记”是**停止使用**，不是物理销毁：SQLite 历史、Pi JSONL、动作摘要和备份中仍可能存在原文。用户可以用本地编辑器查看 `.ppa/sessions`，不要把旧文件导入其他运行时并误认为仍有 PPA 忘记边界。不同措辞的语义等价不能由哈希与主题键完美判定；宿主 Shell 和可信扩展也不是数据保密沙箱。
-
-## 说话与思考
-
-助手可以直接回应，也可以调用 `reflect` 后回应，或先表达一句初步反应、思考后继续说。由当前模型根据话题和用户要求选择，程序不按关键词给每轮强制分流。需要先说时，模型可在工具的 `opening` 字段生成自己的开场回应，终端先显示它，再开始思考；留空则安静思考。不是预设的“让我想想”占位句。
-
-实现仍由 Pi Agent Loop 调度：表达请求不强制生成内部推理；`reflect` 使用当前同一模型、人格和本轮有效上下文，单次请求开启 reasoning，再把简短结论交回原来的对话。不是另一个人格或后台 Agent，也不是让模型在单个请求内任意切换模式。思考阶段没有工具或长期状态写入能力，每轮最多实际思考两次；默认每次 4096 输出 tokens（含推理）、60 秒，可通过 `reflectionMaxTokens` 和 `reflectionTimeoutMs` 调整。
-
-终端显示开场回应、思考状态和后续正文，不显示内部工具问题和结论笔记。原生 reasoning 通道不进入思考工具的会话结果；表达流中显式 `<think>` / `[thinking]` 块也会过滤，包括跨流片段的标记。没有标记的普通文字无法可靠自动判定是不是内部笔记。思考结论摘要仍会作为工具结果保留在本地会话，模型服务本身的日志不受 PPA 控制。
-
-Esc 会取消当前思考及本轮继续输出。超时、输出截断或空结论会报告失败，不自动重试该推理请求，也不把未完成内容当作结论。已经说出的开场回应不会被撤回；恢复后不会自动重放中断的轮次。
-
-## 工具执行边界
-
-原生 `read/write/edit/grep/find/ls` 和 Windows `powershell`（其他平台 `bash`）由 Pi 实现，PPA 在执行入口包裹授权和账本，保留其工具格式。路径先规范化并解析现有链接，再把同一个路径交给原生工具，防止普通越界和重解析；PPA 数据库、会话及备份不允许通过普通文件工具读取。搜索父目录可能覆盖内部历史时会要求缩小搜索范围。
-
-这是**本机可信助手模式**：Shell 使用宿主权限，可访问授权目录之外的内容。没有操作系统沙箱，不抵御并发修改链接的本机恶意进程。不要把目录授权当成 Shell 隔离。
-
-Shell 默认逐次确认；其他未知扩展工具同样要确认。显式安装的扩展是可信代码，可以在自己的函数中直接执行宿主操作，这部分不承诺完整审计。人格、记忆和关系不可能通过 PPA 服务新增授权。
-
-每次工具调用记录规范化参数哈希、最多 4000 字符的摘要、授权、状态和结果。摘要及会话可能包含用户数据，文件未加密。
-
-```text
-proposed → authorized → dispatched → succeeded / failed / unknown
-              ↘ denied / cancelled
-```
-
-派发前写入持久记录；重启将未收尾 `dispatched` 标成 `unknown`，派发前记录标成 `cancelled`。相同规范化动作参数若存在 `unknown`，会拒绝再次执行，须人工核实后处理。不同命令实现同一外部效果不能靠参数哈希自动识别；恢复也不自动运行任何旧任务。`failed` 只表示工具报错，不保证没有部分副作用。
-
-## 备份与恢复
-
-程序运行时使用 `/backup`；关闭程序后可执行 `npm run backup`。两者都在持有单实例锁、Pi 空闲时调用 SQLite 在线备份，并复制会话和生成 SHA-256 清单。
+可以直接在 PPA 终端输入 `/model ornith`。若使用外部配置命令，先退出正在运行的 PPA 实例，再执行：
 
 ```powershell
-npm run backup
-npm run restore -- '完整备份目录' '新的数据目录'
-$env:PPA_DATA_DIR = '新的数据目录'
+npm run model -- list
+npm run model -- current
+npm run model -- use ornith
 npm start
 ```
 
-恢复只允许写入**不存在的新目录**，先验证每个清单文件及数据库完整性。身份和记忆继续沿用，会话路径及私有工作区记忆范围重映射；所有旧权限撤销，需要重新授权。工作区文件、外部动作结果、模型配置、扩展代码和凭据不在备份中，需另行保管。失败的恢复目录保留以便检查，不自动覆盖重试。
+切回 8080 模型：
 
-## 开发与验证
+```powershell
+npm run model -- use qwen3.8
+npm start
+```
+
+切换命令会先请求目标服务的 `/v1/models`，确认模型可用后才更新固定 Agent、provider 和 `config/local.json`。`qwen3.8` 配置的 `modelId: null` 会使用该服务返回的首个模型，并把实际 ID 写入活动配置。若在 Windows 中访问不到 WSL 的 `127.0.0.1:8000`，将配置中的地址改为 `wsl.exe hostname -I` 返回的 WSL 地址。`config/models.json` 可作为未提交的本机配置覆盖示例配置。
+
+`PPA_DATA_DIR` 默认是项目的 `.ppa`：
+
+| 位置 | 内容 |
+| --- | --- |
+| `letta/` | 原生 Agent、会话、provider 和 MemFS 状态 |
+| `letta/memfs/<Agent ID>/memory/system/` | 原生人格及用户记忆 |
+| `letta-migration.json` | 旧/新 ID 对应关系、来源指纹、导入清单和完成状态 |
+| `letta-config.json` | 本数据目录的模型配置 |
+| `ppa-terminal.json` | PPA 界面最近打开的 Agent 和会话，随备份保留 |
+| `ppa-runtime.log` | 后台诊断日志，不属于聊天正文 |
+| `workspace/` | 默认工作目录及项目会话设置 |
+| `backups/` | 旧系统快照及新系统备份 |
+| `reports/` | 本机验收报告 |
+
+设置 LETTA_LOCAL_BACKEND_DIR 隔离原生 Agent/provider 状态。Letta 的部分界面偏好仍使用用户级 `~/.letta/settings.json`；本地会话选择记录在工作区 `.letta/settings.local.json`。请通过本项目入口管理同一数据目录，直接运行原生 CLI 的进程不受 PPA 实例锁约束。
+
+## 日常使用与行为边界
+
+直接自然聊天，Enter 发送。PPA 不在回复过程中排队新的聊天输入，Escape 或 `/stop` 中断当前回复；已发生的副作用不会撤销，中断内容不会自动重发。`/quit`、`exit` 或空闲时 Ctrl+C 正常退出。
+
+| 命令 | 用途 |
+| --- | --- |
+| `/help` | 查看 PPA 中文命令 |
+| `/new` | 新对话，保留人格和记忆 |
+| `/sessions` / `/resume 序号` | 列出和恢复当前助手的会话，包含原终端初始对话 |
+| `/history` | 查看最近 20 条完整对话；启动时仅预览最近 6 条 |
+| `/persona` / `/persona edit` | 查看和编辑人格正文 |
+| `/memory` / `/memory 序号` | 列出原生记忆文件、查看内容 |
+| `/memory edit 序号` | 编辑指定记忆正文 |
+| `/model` / `/model 配置名` | 查看并切换项目模型配置 |
+| `/reconnect` | 模型服务恢复后重新连接 |
+| `/status` | 查看助手、模型、会话和工作目录 |
+
+编辑时输入完整的新正文，单独一行 `.save` 保存并生成原生 Git 版本记录，`.cancel` 放弃；文件描述等元数据会保留。保存前核对原文版本，避免覆盖期间发生的记忆更新。工具需要审批时显示名称与参数，输入 `y` 只允许本次、`n` 拒绝，不追加长期授权。
+
+独立 reasoning 通道只显示思考状态，不打印内容。**当前 Ornith/vLLM 有时把英文思考直接作为普通正文返回**，没有可识别的通道或标记时，界面无法可靠区分它与正常回答；本次真实验收已观察到此情况。PPA 不通过删除英文句子的方式隐藏它，历史中也可能保留这种普通正文。
+
+默认使用 `standard` 审批模式，不继承旧 PPA 授权。启用 bundled/agent 技能；不自动加载旧扩展、全局技能或全局 Mods。旧 memoryBudgetChars、reflectionMaxTokens、reflectionTimeoutMs、extensions、skills 配置不再生效，会给出提示。此次不配置后台反思、常驻服务、定时任务、消息渠道或云端。
+
+人格、记忆和会话已经交给 Letta，旧 PPA 的候选审核、忘记隔离、执行账本及自定义 reflect 节奏已移除。**删除当前记忆不等于删除聊天历史或 MemFS 的 Git 历史**，旧事实仍可能通过历史检索找到。工具权限采用 Letta 原生行为，不是操作系统沙箱；取消不会撤销已发生的副作用。
+
+仓库 `config/identity.json` 只用于没有旧数据库时的首次初始化，启动或重复迁移不会覆盖后续学习。已有旧数据库时，从数据库的最新人格版本迁移。
+
+## 迁移与回退
+
+2026-09-06 已将本机最新人格与 **6 条有效全局记忆**迁入 Letta，默认入口已切换。旧数据库、会话与代码快照保留，未导入旧聊天、证据、历史版本、撤回内容、候选、授权、执行记录或测试 Agent。
+
+迁移是确定性字段映射，不调用模型总结旧资料。首次写入前保存一致性 SQLite 快照、会话、配置和 HEAD 代码 ZIP；记录来源指纹及导入标签，失败保持 preparing。重复执行按标签恢复未完成目标；完成后只验证已有 Agent，不重新写入人格或记忆。来源在未完成迁移期间改变会停止，避免混合两份导入。Letta 使用自己的 Agent ID，旧 ID 只保留为迁移来源标识。
+
+回退时，将迁移前备份的 `code.zip` 解压到独立目录，把该备份的 `ppa.sqlite` 和 `sessions` 放入其 `.ppa`，恢复所需配置，运行 `npm ci` 后启动。新 Letta 数据不要反向导入旧 SQLite。迁移前代码版本为 `07d2f7800c38bb9a887c6540a2fcd82897ee15c0`；具体备份目录记录在迁移清单中。
+
+## 备份恢复
+
+先退出使用本数据目录的所有 Letta 实例：
+
+```powershell
+npm run backup
+npm run restore -- '<备份目录>' '<不存在的新数据目录>'
+$env:PPA_DATA_DIR = '<新的数据目录>'
+npm start
+```
+
+新备份包含完整 Letta 本地状态、工作区、项目会话设置和 PPA 模型配置，带 SHA-256 清单。恢复前校验所有列出的文件，拒绝损坏或越界路径，只写入不存在的新目录，并重映射项目会话设置中的本地存储位置。对话正文中的旧绝对路径不会被改写。
+
+备份不导出 provider 凭据、不包含用户级界面偏好；恢复后需重新提供凭据。文件及历史内容未加密。新备份不会打包旧 PPA 数据库、旧会话、旧备份和验收用 Agent。
+
+## 验证
 
 ```powershell
 npm run build
 npm test
-npm run smoke:live
-npm run smoke:live -- --dialogue
-npm run smoke:rhythm
+npm run smoke:letta:integration  # 真实发布包 CLI + 本地模拟 HTTP/SSE
+npm run smoke:live              # 真实本地模型；创建隔离测试数据
+npm run smoke:interface         # PPA 交互层 + 真实原生后台 + 模拟模型
+npm run smoke:terminal          # PPA 自有终端 + 当前真实模型，隔离验收身份
 ```
 
-`build` 是严格 TypeScript 检查，运行直接使用 `tsx`。测试使用临时隔离目录，不修改你的助手状态。SDK 集成测试确实使用 Pi Agent Loop 和原生工具，但模型响应由本地 HTTP/SSE fixture 生成。
+当前 11 项自动化测试通过；新增 PPA 接口的 11 项集成检查覆盖流式聊天、会话恢复、记忆提交和冲突保护、真实文件审批/拒绝、中断、模型切换及离线记忆访问。自有终端已在真实 Windows PTY 和 vLLM Ornith 上验证中文回复、人格编辑、键盘批准文件写入、Escape 中断及正常退出。迁移阶段的 Qwen 记忆、工具和备份恢复验收继续保留为历史证据。
 
-`smoke:live` 明确连接已运行的真实模型，在 `.ppa/live/<时间>` 创建隔离助手，每次请求最多等待 90 秒，最多执行 5 轮：中文回复、记忆提交、新会话召回、原生文件写入、忘记后不召回。不批准 Shell 或未知扩展副作用。
+本机报告位于 `.ppa/reports/letta-live.json`、`letta-integration.json`、`letta-pty.json` 和 `letta-migration-verification.json`。这些结果不保证长期陪伴体验或所有自然表达的记忆成功率；本地模型的工具选择和推理耗时仍会波动。
 
-报告在 `.ppa/reports/live-smoke.json`，包含状态、模型、各检查耗时、首字延迟、整轮耗时和记忆提议耗时。`UNAVAILABLE_NOT_VALIDATED` 表示端点离线，`LIVE_SMOKE_PASSED_NOT_FULL_ACCEPTANCE` 也只表示这组冒烟通过。实际多轮指代、错误纠正、长对话压缩后的行为和长期陪伴体验仍需真实模型专项验收。
+新界面报告在 `.ppa/reports/ppa-interface.json`、`ppa-tui-real.json`；验收身份和文件位于隔离目录，不写入正式助手。上游终端命令不会自动透传到 PPA 界面，其他高级原生功能仍可通过维护入口访问。
 
-`--dialogue` 使用另一份隔离状态执行 7 轮：自然形成偏好、纠正候选、下一句确认、跨会话召回新版本、临时称呼要求不永久化、自然忘记、忘记后不召回。仅为测试中的忘记操作提供宿主确认，不批准 Shell 或扩展。报告及可审查的用户/助手对话写入 `.ppa/reports/live-dialogue.json`。
+失败记录仍保留：Windows 文件授权通配规则未匹配曾导致工具被拒绝并超时，文件操作复测使用原生 acceptEdits 授权，正式入口仍为 standard。完全无输出的挂起模拟流曾未及时结束；已通过的流式中断测试不代表所有网络挂起情况。
 
-2026-09-05 记忆专项 7/7 通过：形成记忆约 4.00 秒，纠正约 2.87 秒，确认约 1.48 秒，新会话召回约 0.70 秒。这是当时统一关闭思考的历史结果；2026-09-06 已改为上述自主选择表达与思考的机制，旧延迟不能代表新机制。所有单次耗时都会受提示缓存和采样影响。
-
-`smoke:rhythm` 用隔离状态验证明确要求直接回应、先思考、先说再想三种顺序，报告写入 `.ppa/reports/live-rhythm.json`。可用 `-- --case=direct`（或 `before`、`between`）单独复测并生成独立报告。报告区分正文流片段和工具开场回应，并检查真实推理通道和思考完成后的继续输出。这是能力与显式指令验收，不代表模型能在所有自然场景中稳定选对节奏。实测曾出现普通问候多余地思考、跳过思考、延后开场和思考标记泄漏，记录保存在 `live-rhythm-*-regression.json` / `live-rhythm-first-attempt.json`；不能只取通过的一次推算成功率。`npx tsx scripts/tui-smoke.ts --reflection` 已用模拟模型在真实 Windows PTY 检查开场先显示、思考状态、继续回应和正常退出。
-
-复测曾出现未调用工具却口头承诺保存、检索证据泄露旧偏好两类失败，记录保存在 `.ppa/reports/live-dialogue-regression.json` 和 `live-dialogue-evidence-regression.json`；随后加入宿主未提交提示、候选规则和检索字段收敛。最新通过不代表所有自然表达都可靠；长聊人格、复杂指代及重复多次的成功率仍待验证。测试没有迁移或修改正式助手的人格、记忆和权限，也没有更改模型服务启动参数。
-
-可选 `npx tsx scripts/tui-smoke.ts` 在临时目录启动模拟模型 TUI，输入 `/quit` 退出；它是界面验证夹具，不是正式使用入口。
-
-2026-09-06 最后一组节奏测试 3/3 通过：直接回应整轮约 0.75 秒，先思考后说约 13.56 秒，先说再想再说约 25.10 秒。后两者均观察到真实 reasoning 输出；第三种开场在推理开始前呈现。思考带来的等待仍存在，不能把这些单次结果解释为稳定延迟。
-
-源码按 `store`（身份及记忆事务）、`context`、`actions`、`pi-adapter`、`backup` 和终端启动组织。Pi 原生实现没有被复制或修改，PPA 没有第二套 Agent Loop。当前只支持单用户、单进程、单活跃助手，不包含 Observer、自主调度、GUI、语音、桌宠和复杂任务恢复。
-
-上游参考：[Pi SDK](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)、[扩展接口](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)。实现以锁定发布包的类型和实测结果为准。
-
-## 许可证
-
-[MIT](LICENSE)。
+固定发布包的 sharp <0.35.0 被 npm audit 报告高危公告 GHSA-f88m-g3jw-g9cj。未擅自降级 Letta 或修改其依赖实现，不将当前测试结果解释为依赖安全审计通过。

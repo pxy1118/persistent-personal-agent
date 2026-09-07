@@ -7,11 +7,15 @@ export function acquireLock(data: string) {
   try { mkdirSync(path); }
   catch (error) {
     if (!existsSync(path)) throw error;
-    let owner: { pid: number; token: string };
+    let owner: { pid: number; token: string; childPid?: number };
     try { owner = JSON.parse(readFileSync(resolve(path, 'owner.json'), 'utf8')); }
     catch { throw new Error(`实例锁尚未就绪或损坏，请核实没有 PPA 进程后移走：${path}`); }
     try { process.kill(owner.pid, 0); throw new Error(`PPA 已在运行（PID ${owner.pid}）。`); }
     catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e; }
+    if (owner.childPid) {
+      try { process.kill(owner.childPid, 0); throw new Error(`Letta 子进程仍在运行（PID ${owner.childPid}）。`); }
+      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e; }
+    }
     // Atomic rename prevents two starters from both claiming a stale lock.
     const stale = resolve(data, `stale-lock-${token}`); renameSync(path, stale);
     rmSync(stale, { recursive: true }); mkdirSync(path);

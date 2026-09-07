@@ -1,0 +1,14 @@
+{
+  "qwen3.8": {
+    "modelBaseUrl": "http://127.0.0.1:8080/v1",
+    "modelId": null,
+    "contextWindow": 65536,
+    "maxTokens": 4096
+  },
+  "ornith": {
+    "modelBaseUrl": "http://127.0.0.1:8000/v1",
+    "modelId": "Ornith-1.5",
+    "contextWindow": 65536,
+    "maxTokens": 4096
+  }
+}
