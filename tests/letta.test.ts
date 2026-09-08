@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { spawnSync } from 'node:child_process';
-import { locations, atomicJson, json, childEnv, agentFile, configureAgent, root } from '../src/letta-runtime.js';
+import { createServer } from 'node:http';
+import { locations, atomicJson, json, childEnv, agentFile, configureAgent, normalizeConfig, modelApiKey, modelHandle, modelIds, root } from '../src/letta-runtime.js';
 import { readLegacy, renderImport, backupLetta, restoreLetta } from '../src/letta-data.js';
-import { readProfiles, selectProfile, writeActiveConfig } from '../src/model-profiles.js';
+import { addProfile, readProfiles, selectProfile, writeActiveConfig } from '../src/model-profiles.js';
 import { acquireLock } from '../src/lock.js';
+import { PpaSession } from '../src/ppa-session.js';
 
 function fixture() {
   const p = locations(mkdtempSync(join(tmpdir(), 'ppa-letta-test-')));
@@ -33,6 +35,71 @@ test('native model selection survives launch config while bounds update', () => 
   const { p, id } = fixture(); configureAgent(p, id, { ...json(p.settings), maxTokens: 2048 });
   assert.equal(json(agentFile(p,id)).model, 'openai-compatible/original'); assert.equal(json(agentFile(p,id)).model_settings.max_tokens, 2048);
   configureAgent(p, id, { ...json(p.settings), modelId: 'replacement' }); assert.equal(json(agentFile(p,id)).model, 'openai-compatible/replacement');
+  configureAgent(p, id, { ...json(p.settings), modelId: 'replacement', provider: 'llama-cpp' }); assert.equal(json(agentFile(p,id)).model, 'llama.cpp/replacement');
+});
+test('model config provider defaults to openai-compatible and validates llama-cpp handles', () => {
+  const base = { modelBaseUrl: 'http://127.0.0.1:8080/v1', modelId: 'x', contextWindow: 4096, maxTokens: 1024 };
+  assert.equal(normalizeConfig(base).provider, 'openai-compatible');
+  const llm = normalizeConfig({ ...base, provider: 'llama-cpp' });
+  assert.equal(llm.provider, 'llama-cpp');
+  assert.equal(modelHandle(llm, 'qwen.gguf'), 'llama.cpp/qwen.gguf');
+  assert.equal(modelHandle(normalizeConfig(base), 'qwen.gguf'), 'openai-compatible/qwen.gguf');
+  assert.throws(() => normalizeConfig({ ...base, provider: 'ollama' }), /provider 无效/);
+  assert.throws(() => normalizeConfig({ ...base, apiKeyEnv: 'BAD-NAME' }), /apiKeyEnv/);
+});
+test('remote profiles reference environment credentials without persisting secrets', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ppa-profile-test-')), file = join(dir, 'models.json');
+  atomicJson(file, { local: { modelBaseUrl: 'http://127.0.0.1:8080/v1', modelId: 'local', contextWindow: 4096, maxTokens: 1024 } });
+  const cloud = addProfile('cloud', { modelBaseUrl: 'https://api.example.com/v1', modelId: 'online-model', contextWindow: 32768, maxTokens: 4096, apiKeyEnv: 'TEST_CLOUD_API_KEY' }, file);
+  assert.equal(cloud.provider, 'openai-compatible');
+  assert.equal(json<any>(file).cloud.apiKeyEnv, 'TEST_CLOUD_API_KEY');
+  assert.ok(!readFileSync(file, 'utf8').includes('super-secret'));
+  process.env.TEST_CLOUD_API_KEY = 'super-secret';
+  try { assert.equal(modelApiKey(cloud), 'super-secret'); } finally { delete process.env.TEST_CLOUD_API_KEY; }
+  assert.throws(() => modelApiKey(cloud), /未设置/);
+  assert.throws(() => addProfile('insecure', { ...cloud, modelBaseUrl: 'http://api.example.com/v1' }, file), /HTTPS/);
+});
+test('model discovery uses the credential selected by the profile', async () => {
+  const server = createServer((request, response) => {
+    assert.equal(request.headers.authorization, 'Bearer profile-secret');
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify({ data: [{ id: 'online-model' }] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  process.env.TEST_PROFILE_API_KEY = 'profile-secret';
+  try {
+    const config = normalizeConfig({ modelBaseUrl: `http://127.0.0.1:${port}/v1`, modelId: 'online-model', contextWindow: 4096, maxTokens: 1024, apiKeyEnv: 'TEST_PROFILE_API_KEY' });
+    assert.deepEqual(await modelIds(config), ['online-model']);
+  } finally {
+    delete process.env.TEST_PROFILE_API_KEY;
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+test('live switch from llama.cpp to OpenAI-compatible stops using the old local bridge', async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify({ data: [{ id: 'online-model' }] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  const { p } = fixture(), session = new PpaSession(p), calls: any[] = [];
+  let oldBridgeClosed = false;
+  session.online = true;
+  (session as any).client = {};
+  (session as any).runtime = { agent_id: session.agentId, conversation_id: 'default' };
+  (session as any).bridge = { baseUrl: 'http://127.0.0.1:1/v1', close: () => { oldBridgeClosed = true; } };
+  (session as any).request = async (type: string, payload: unknown) => { calls.push({ type, payload }); return {}; };
+  try {
+    const config = normalizeConfig({ modelBaseUrl: `http://127.0.0.1:${port}/v1`, modelId: 'online-model', contextWindow: 4096, maxTokens: 1024 });
+    await session.changeModel(config, () => {});
+    const connected = calls.find(call => call.type === 'connect_provider');
+    assert.equal(connected.payload.fields.baseUrl, config.modelBaseUrl);
+    assert.equal(oldBridgeClosed, true);
+    assert.equal((session as any).bridge, undefined);
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
 });
 test('model profiles include the vLLM Ornith endpoint and write an active config', () => {
   const profiles = readProfiles(join(root, 'config/models.example.json'));
@@ -53,7 +120,9 @@ test('backup restores native data into a new directory without exporting provide
   const { p, id } = fixture(); mkdirSync(join(p.store,'providers')); atomicJson(join(p.store,'providers/auth.json'), { version:1, providers:{ secret:{auth:{key:'TEST_SECRET'}} } });
   atomicJson(join(p.data,'ppa-terminal.json'),{agentId:id,conversationId:'local-conv-1'});
   mkdirSync(join(p.workspace,'.letta'),{recursive:true}); atomicJson(join(p.workspace,'.letta/settings.local.json'),{ sessionsByServer:{[`local:${p.store}`]:{agentId:id,conversationId:'local-conv-1'}} });
+  mkdirSync(join(p.data,'pet')); atomicJson(join(p.data,'pet/preferences.json'),{initiative_off:true});
   const b = backupLetta(p), target = p.data + '-restored'; restoreLetta(b,target);
+  assert.equal(json(join(target,'pet/preferences.json')).initiative_off,true);
   assert.equal(json(join(target,'letta-migration.json')).agentId,id); assert.ok(!readFileSync(join(b,'letta/providers/auth.json'),'utf8').includes('TEST_SECRET'));
   assert.equal(json(join(target,'ppa-terminal.json')).conversationId,'local-conv-1');
   assert.ok(readFileSync(join(target,'workspace/.letta/settings.local.json'),'utf8').includes(JSON.stringify(join(target,'letta')).slice(1,-1)));

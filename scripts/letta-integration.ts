@@ -31,7 +31,7 @@ const server = createServer(async (req,res) => {
 });
 await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));
 const port=(server.address() as {port:number}).port;
-const c={modelBaseUrl:`http://127.0.0.1:${port}/v1`,modelId:'fixture',contextWindow:32768,maxTokens:4096};
+const c={modelBaseUrl:`http://127.0.0.1:${port}/v1`,modelId:'fixture',contextWindow:32768,maxTokens:4096,provider:'openai-compatible' as const};
 function invoke(args:string[], input?: (child:ReturnType<typeof spawn>)=>void) {
   return new Promise<string>((done,fail)=> {
     const child=spawn(process.execPath,[cliPath(),...args],{cwd:p.workspace,env:childEnv(p),windowsHide:true,stdio:['pipe','pipe','pipe']}); let out='';

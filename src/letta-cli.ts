@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { acquireLock } from './lock.js';
-import { locations, readConfig, json, cli, modelIds, connect, configureAgent, launch, redact } from './letta-runtime.js';
+import { locations, readConfig, json, cli, modelIds, connect, configureAgent, launch, redact, isLocalModelEndpoint } from './letta-runtime.js';
 import { migrate, backupLetta, restoreLetta, type Migration } from './letta-data.js';
-import { readProfiles, selectProfile, writeActiveConfig } from './model-profiles.js';
+import { addProfile, readProfiles, selectProfile, writeActiveConfig } from './model-profiles.js';
 
 const p = locations(); mkdirSync(p.data, { recursive: true });
 const command = process.argv[2] ?? 'start';
@@ -11,14 +11,28 @@ try {
   if (command === 'restore') {
     if (!process.argv[3] || !process.argv[4]) throw new Error('用法：restore <备份目录> <新的数据目录>');
     console.log(restoreLetta(process.argv[3], process.argv[4]));
-  } else if (command === 'model' && (modelAction === 'list' || modelAction === 'current')) {
+  } else if (command === 'model' && (modelAction === 'list' || modelAction === 'current' || modelAction === 'add')) {
+    if (modelAction === 'add') {
+      const [name, ...raw] = process.argv.slice(4);
+      const allowed = new Set(['--base-url', '--model', '--api-key-env', '--context-window', '--max-tokens']);
+      const options: Record<string, string> = {};
+      for (let i = 0; i < raw.length; i += 2) {
+        if (!allowed.has(raw[i]) || raw[i + 1] === undefined) throw new Error('用法：npm run model -- add <名称> --base-url <URL> --model <ID> --api-key-env <变量名> [--context-window 32768] [--max-tokens 4096]');
+        options[raw[i].slice(2)] = raw[i + 1];
+      }
+      if (!name || !options['base-url'] || !options.model || !options['api-key-env']) throw new Error('在线配置必须提供名称、--base-url、--model 和 --api-key-env。');
+      const saved = addProfile(name, { modelBaseUrl: options['base-url'], modelId: options.model, apiKeyEnv: options['api-key-env'], contextWindow: Number(options['context-window'] ?? 32768), maxTokens: Number(options['max-tokens'] ?? 4096), provider: 'openai-compatible' });
+      console.log(JSON.stringify({ status: 'MODEL_PROFILE_ADDED_NOT_ACTIVE', name, ...saved, next: `npm run model -- use ${name}` }, null, 2));
+      process.exitCode = 0;
+    } else {
     const profiles = readProfiles();
     if (modelAction === 'list') {
       console.log(JSON.stringify({ profiles: Object.entries(profiles).map(([name, c]) => ({ name, ...c })) }, null, 2));
     } else {
       const c = readConfig(p);
-      const matched = Object.entries(profiles).filter(([, candidate]) => candidate.modelBaseUrl === c.modelBaseUrl && candidate.contextWindow === c.contextWindow && candidate.maxTokens === c.maxTokens && (candidate.modelId === null || candidate.modelId === c.modelId)).map(([name]) => name);
+      const matched = Object.entries(profiles).filter(([, candidate]) => candidate.modelBaseUrl === c.modelBaseUrl && candidate.contextWindow === c.contextWindow && candidate.maxTokens === c.maxTokens && candidate.provider === c.provider && candidate.apiKeyEnv === c.apiKeyEnv && (candidate.modelId === null || candidate.modelId === c.modelId)).map(([name]) => name);
       console.log(JSON.stringify({ profile: matched[0] ?? null, ...c }, null, 2));
+    }
     }
   } else {
     const release = acquireLock(p.data);
@@ -44,10 +58,11 @@ try {
         } else throw new Error('用法：npm run model -- list | current | use <配置名>');
       }
       else if (command === 'doctor') {
-        const ids = await modelIds(readConfig(p));
+        const c = readConfig(p);
+        const ids = await modelIds(c);
         const m = existsSync(p.manifest) ? json<Migration>(p.manifest) : null;
         if (m?.agentId) cli(p, ['agents', 'config', '--agent', m.agentId]);
-        console.log(JSON.stringify({ status: 'ENDPOINT_AVAILABLE_NOT_CHAT_VALIDATED', models: ids, agentId: m?.agentId, backend: 'local' }));
+        console.log(JSON.stringify({ status: 'ENDPOINT_AVAILABLE_NOT_CHAT_VALIDATED', models: ids, agentId: m?.agentId, agentBackend: 'local', modelEndpoint: c.modelBaseUrl, modelLocation: isLocalModelEndpoint(c.modelBaseUrl) ? 'local' : 'remote' }));
       } else if (command === 'start') {
         const c = readConfig(p);
         if (!existsSync(p.manifest)) throw new Error('请先运行 npm run migrate:letta，初始化或迁移助手。');

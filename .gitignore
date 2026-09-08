@@ -5,3 +5,9 @@ config/models.json
 exports/
 *.lnk
 *.tsbuildinfo
+nuonuo_dev_assets/
+
+# Desktop pet local runtime
+desktop-pet/.venv/
+**/__pycache__/
+desktop-pet/.pytest_cache/

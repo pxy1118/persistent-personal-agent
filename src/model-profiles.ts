@@ -15,6 +15,8 @@ function profile(value: unknown, name: string): ModelProfile {
     modelId: v.modelId ?? null,
     contextWindow: v.contextWindow,
     maxTokens: v.maxTokens,
+    provider: v.provider,
+    apiKeyEnv: v.apiKeyEnv,
   });
 }
 
@@ -35,3 +37,15 @@ export function selectProfile(name: string, all = readProfiles()): ModelProfile 
 export function activeConfigFile() { return join(root, 'config/local.json'); }
 
 export function writeActiveConfig(c: ModelProfile, file = activeConfigFile()) { atomicJson(file, c); }
+
+export function addProfile(name: string, value: unknown, file = localFile) {
+  if (!/^[\p{L}\p{N}._-]+$/u.test(name)) throw new Error('配置名只能包含文字、数字、点、下划线或连字符。');
+  const profiles = readProfiles(existsSync(file) ? file : exampleFile);
+  if (profiles[name]) throw new Error(`模型配置 ${name} 已存在；请编辑 config/models.json 或换一个名称。`);
+  const selected = profile(value, name);
+  const url = new URL(selected.modelBaseUrl);
+  const local = ['localhost', '::1', '[::1]'].includes(url.hostname.toLowerCase()) || /^127(?:\.\d{1,3}){3}$/.test(url.hostname);
+  if (!local && url.protocol !== 'https:') throw new Error('远程模型地址必须使用 HTTPS。');
+  atomicJson(file, { ...profiles, [name]: selected });
+  return selected;
+}

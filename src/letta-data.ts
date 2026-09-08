@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, lstatSync, writeFileSync } from 'node:fs';
 import { join, resolve, relative, dirname, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { root, version, json, atomicJson, digest, cli, memoryDir, agentFile, configureAgent, connect, modelIds, type Locations, type LettaConfig } from './letta-runtime.js';
+import { root, version, json, atomicJson, digest, cli, memoryDir, agentFile, configureAgent, connect, modelIds, modelHandle, type Locations, type LettaConfig } from './letta-runtime.js';
 
 export type ImportSource = { agentId: string; identity: { name: string; personality: string; relationship: string; version?: number }; memories: { id: string; key: string; content: string; kind: string; scope: string; version: number }[] };
 export type Migration = { version: 1; status: 'preparing' | 'complete'; sourceFingerprint: string; oldAgentId: string; agentId?: string; sourceMemoryIds: string[]; createdAt: string; completedAt?: string; legacyBackup?: string; lettaVersion: string };
@@ -63,7 +63,7 @@ export async function migrate(p: Locations, c: LettaConfig) {
     const agents = JSON.parse(cli(p, ['agents', 'list', '--tags', tag]));
     const rows = Array.isArray(agents) ? agents : agents.items;
     if (!Array.isArray(rows) || rows.length > 1) throw new Error('导入目标存在歧义。');
-    const agent = rows[0] ?? JSON.parse(cli(p, ['agents', 'create', '--name', source.identity.name, '--personality', 'blank', '--model', `openai-compatible/${model}`, '--tags', tag]));
+    const agent = rows[0] ?? JSON.parse(cli(p, ['agents', 'create', '--name', source.identity.name, '--personality', 'blank', '--model', modelHandle(c, model), '--tags', tag]));
     record.agentId = agent.id;
     atomicJson(p.manifest, record); // A interrupted create is recovered by its deterministic tag.
   }
@@ -85,7 +85,7 @@ export async function migrate(p: Locations, c: LettaConfig) {
 export function backupLetta(p: Locations) {
   const m = json<Migration>(p.manifest); if (m.status !== 'complete' || !m.agentId) throw new Error('迁移尚未完成。'); agentFile(p, m.agentId);
   const target = join(p.backups, `letta-${Date.now()}-${randomUUID().slice(0, 8)}`); mkdirSync(target, { recursive: true });
-  for (const name of ['letta', 'letta-home', 'workspace', 'letta-migration.json', 'letta-config.json', 'ppa-terminal.json']) {
+  for (const name of ['letta', 'letta-home', 'workspace', 'letta-migration.json', 'letta-config.json', 'ppa-terminal.json', 'pet']) {
     const from = join(p.data, name); if (!existsSync(from)) continue;
     if (lstatSync(from).isDirectory()) filesUnder(from);
     cpSync(from, join(target, name), { recursive: true });

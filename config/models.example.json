@@ -3,7 +3,8 @@
     "modelBaseUrl": "http://127.0.0.1:8080/v1",
     "modelId": null,
     "contextWindow": 65536,
-    "maxTokens": 4096
+    "maxTokens": 4096,
+    "provider": "llama-cpp"
   },
   "ornith": {
     "modelBaseUrl": "http://127.0.0.1:8000/v1",

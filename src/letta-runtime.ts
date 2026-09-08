@@ -9,7 +9,11 @@ export const version = '0.31.12';
 export const digest = (v: string | Buffer) => createHash('sha256').update(v).digest('hex');
 export const json = <T = any>(p: string): T => JSON.parse(readFileSync(p, 'utf8'));
 export function atomicJson(p: string, v: unknown) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p + '.tmp', JSON.stringify(v, null, 2) + '\n'); renameSync(p + '.tmp', p); }
-export type LettaConfig = { modelBaseUrl: string; modelId: string | null; contextWindow: number; maxTokens: number };
+export type LettaConfig = { modelBaseUrl: string; modelId: string | null; contextWindow: number; maxTokens: number; provider: ModelProvider; apiKeyEnv?: string };
+export const modelProviders = ['openai-compatible', 'llama-cpp'] as const;
+export type ModelProvider = (typeof modelProviders)[number];
+/** Canonical local model handle for a provider; llama.cpp uses the `llama.cpp/` prefix. */
+export function modelHandle(c: LettaConfig, modelId: string) { return `${c.provider === 'llama-cpp' ? 'llama.cpp' : 'openai-compatible'}/${modelId}`; }
 export function locations(data = process.env.PPA_DATA_DIR ?? join(root, '.ppa')) {
   data = resolve(data);
   return { data, store: join(data, 'letta'), workspace: join(data, 'workspace'), manifest: join(data, 'letta-migration.json'), settings: join(data, 'letta-config.json'), backups: join(data, 'backups') };
@@ -21,7 +25,23 @@ export function normalizeConfig(c: Record<string, any>): LettaConfig {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('模型地址必须是无内嵌凭据的 HTTP(S) 地址。');
   if (c.modelId !== null && (typeof c.modelId !== 'string' || !c.modelId)) throw new Error('modelId 无效。');
   if (![c.contextWindow, c.maxTokens].every(n => Number.isInteger(n) && n >= 256) || c.maxTokens >= c.contextWindow) throw new Error('上下文与输出上限无效。');
-  return { modelBaseUrl: c.modelBaseUrl.replace(/\/$/, ''), modelId: c.modelId, contextWindow: c.contextWindow, maxTokens: c.maxTokens };
+  const provider = c.provider ?? 'openai-compatible';
+  if (!modelProviders.includes(provider)) throw new Error(`provider 无效：${provider}。支持：${modelProviders.join(' / ')}。`);
+  const apiKeyEnv = c.apiKeyEnv;
+  if (apiKeyEnv !== undefined && (typeof apiKeyEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(apiKeyEnv))) throw new Error('apiKeyEnv 必须是有效的环境变量名。');
+  return { modelBaseUrl: c.modelBaseUrl.replace(/\/$/, ''), modelId: c.modelId, contextWindow: c.contextWindow, maxTokens: c.maxTokens, provider, ...(apiKeyEnv ? { apiKeyEnv } : {}) };
+}
+export function modelApiKey(c: LettaConfig) {
+  if (c.apiKeyEnv) {
+    const key = process.env[c.apiKeyEnv];
+    if (!key) throw new Error(`模型凭据环境变量 ${c.apiKeyEnv} 未设置。`);
+    return key;
+  }
+  return process.env.PPA_MODEL_API_KEY ?? 'local-no-key';
+}
+export function isLocalModelEndpoint(baseUrl: string) {
+  const host = new URL(baseUrl).hostname.toLowerCase();
+  return host === 'localhost' || host === '::1' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 export function readConfig(p: Locations): LettaConfig {
   const file = existsSync(p.settings) ? p.settings : join(root, 'config/local.example.json');
@@ -42,7 +62,10 @@ export function cliPath() {
   if (json(join(dir, 'package.json')).version !== version) throw new Error(`必须使用 Letta Code ${version}，请运行 npm ci。`);
   return join(dir, 'letta.js');
 }
-export function redact(s: string) { const key = process.env.PPA_MODEL_API_KEY; return key ? s.split(key).join('[redacted]') : s; }
+export function redact(s: string) {
+  const secrets = Object.entries(process.env).filter(([name, value]) => /(?:API_KEY|AUTH_TOKEN)$/i.test(name) && (value?.length ?? 0) >= 8).map(([, value]) => value!);
+  return secrets.reduce((text, key) => text.split(key).join('[redacted]'), s);
+}
 export function cli(p: Locations, args: string[], timeout = 60000) {
   mkdirSync(p.workspace, { recursive: true });
   const r = spawnSync(process.execPath, [cliPath(), ...args], { cwd: p.workspace, env: childEnv(p), encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
@@ -61,7 +84,8 @@ export function cliAsync(p: Locations, args: string[], timeout = 60000): Promise
   });
 }
 export async function modelIds(c: LettaConfig) {
-  const r = await fetch(c.modelBaseUrl + '/models', { signal: AbortSignal.timeout(5000), headers: process.env.PPA_MODEL_API_KEY ? { Authorization: `Bearer ${process.env.PPA_MODEL_API_KEY}` } : {} });
+  const key = modelApiKey(c);
+  const r = await fetch(c.modelBaseUrl + '/models', { signal: AbortSignal.timeout(5000), headers: key === 'local-no-key' ? {} : { Authorization: `Bearer ${key}` } });
   if (!r.ok) throw new Error(`模型列表 HTTP ${r.status}`);
   const v = await r.json() as { data?: { id: string }[] };
   const ids = v.data?.map(m => m.id).filter(id => typeof id === 'string' && id.length);
@@ -82,12 +106,13 @@ export function configureAgent(p: Locations, id: string, c: LettaConfig, initial
   const file = agentFile(p, id), a = json(file);
   if (!a.model_settings || typeof a.system !== 'string') throw new Error('不支持的 Letta Agent 存储结构。');
   const previous = existsSync(p.settings) ? json(p.settings) : null;
-  if (initialModel || (c.modelId && previous?.modelId !== c.modelId)) a.model = 'openai-compatible/' + (initialModel ?? c.modelId);
+  if (initialModel) a.model = modelHandle(c, initialModel);
+  else if (c.modelId && (previous?.modelId !== c.modelId || previous?.provider !== c.provider)) a.model = modelHandle(c, c.modelId);
   a.model_settings = { ...a.model_settings, context_window_limit: c.contextWindow, max_tokens: c.maxTokens };
   atomicJson(file, a); atomicJson(p.settings, c);
 }
 export function connect(p: Locations, c: LettaConfig) {
-  cli(p, ['connect', 'openai-compatible', '--base-url', c.modelBaseUrl, '--api-key', process.env.PPA_MODEL_API_KEY ?? 'local-no-key']);
+  cli(p, ['connect', c.provider, '--base-url', c.modelBaseUrl, '--api-key', modelApiKey(c)]);
 }
 export const sessionArgs = (id: string) => ['--backend', 'local', '--agent', id, '--no-mods', '--skill-sources', 'bundled,agent', '--reflection-trigger', 'off', '--permission-mode', 'standard'];
 export async function launch(p: Locations, id: string, extra: string[] = [], inherit = true) {

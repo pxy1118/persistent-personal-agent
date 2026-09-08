@@ -1,15 +1,34 @@
 import { createElement } from 'react';
 import { render } from 'ppa-ink';
 import { TuiView, type TuiState, type Entry, type Menu } from './tui-view.js';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { PpaSession, type MemoryDocument, type ToolApproval, type ChatMessage } from './ppa-session.js';
+import { permissionModes, permissionModeLabel, permissionModeDetail, cyclePermissionMode, type PermissionMode } from './permission-modes.js';
 import { acquireLock } from './lock.js';
-import { locations, readConfig, redact } from './letta-runtime.js';
+import { isLocalModelEndpoint, locations, readConfig, redact } from './letta-runtime.js';
 import { readProfiles, selectProfile, writeActiveConfig } from './model-profiles.js';
 
 export function safeTerminal(text: string) { return redact(text).replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ''); }
+export const imageExtensions = new Set(['.png','.jpg','.jpeg','.gif','.webp','.bmp','.heic','.heif']);
+const imageMediaTypes: Record<string, string> = { '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.bmp':'image/bmp','.heic':'image/heic','.heif':'image/heif' };
+export function imageMediaType(path: string) { return imageMediaTypes[path.slice(path.lastIndexOf('.')).toLowerCase()] ?? undefined; }
+/**
+ * Split `/image` args into a file path and an optional question.
+ * Quoted paths win; otherwise the longest existing prefix is the path, so
+ * paths containing spaces still work when followed by a question.
+ */
+export function splitImageArgs(rest: string, exists: (p: string) => boolean): { path?: string; question: string } {
+  const quoted = rest.match(/^"([^"]*)"(?:\s+(.*))?$/);
+  if (quoted) return { path: quoted[1] || undefined, question: quoted[2]?.trim() ?? '' };
+  const parts = rest.split(/\s+/).filter(Boolean);
+  for (let k = parts.length; k >= 1; k--) {
+    const candidate = parts.slice(0, k).join(' ');
+    if (exists(candidate)) return { path: candidate, question: parts.slice(k).join(' ').trim() };
+  }
+  return { question: '' };
+}
 const help = `
   日常聊天       直接输入内容，Enter 发送
   /new           新对话，保留人格与记忆
@@ -19,6 +38,8 @@ const help = `
   /memory        列出记忆文件；/memory 序号 查看
   /memory edit 序号  编辑记忆，保存到原生存储
   /model         列出已有模型配置；/model 配置名 切换
+  /mode          查看并切换权限模式（标准 / 自动批准编辑 / 严格等）
+  /image         发送图片：/image "图片路径" [问题]
   /status        当前助手、模型和连接状态
   /reconnect     模型服务启动后重新连接
   /stop          中断本轮（也可按 Escape）
@@ -27,12 +48,12 @@ const help = `
   工具审批       输入 y 仅允许本次，n 拒绝
   记忆编辑       Ctrl+S 保存，Esc 放弃，Enter 换行
 `;
-const toolLabel = (name: string) => ({ Read: '读取文件', Write: '写入文件', Edit: '编辑文件', Bash: '执行命令', memory: '更新记忆', Agent: '调用助手', Skill: '使用技能' }[name] ?? name);
+const toolLabel = (name: string) => ({ Read: '读取文件', Write: '写入文件', Edit: '编辑文件', Bash: '执行命令', memory: '更新记忆', Agent: '调用助手', Skill: '使用技能', capture_screen: '读取屏幕' }[name] ?? name);
 
 export class PpaTerminal {
   private commandBusy = false;
   private exiting = false;
-  private editor?: { doc: MemoryDocument; header: string; lines: string[] };
+  private editor?: { doc: MemoryDocument; header: string; text: string };
   private documents: MemoryDocument[] = [];
   private sessions: any[] = [];
   private approval?: ToolApproval;
@@ -45,7 +66,7 @@ export class PpaTerminal {
   private done?: () => void;
   private ui?: ReturnType<typeof render>;
   constructor(readonly session: PpaSession, readonly input = process.stdin, readonly output = process.stdout) {}
-  private snapshot():TuiState { return {entries:[...this.entries],name:safeTerminal(this.session.name),model:safeTerminal(this.session.model),busy:this.session.busy||this.commandBusy,task:this.task,stream:this.stream,online:this.session.online,modelReady:this.session.modelReady,approval:this.approval?{tool:toolLabel(this.approval.tool),args:safeTerminal(JSON.stringify(this.approval.args,null,2)),id:this.approval.id}:undefined,menu:this.menu,editor:this.editor?{path:this.editor.doc.path,text:this.editor.lines.join('\n')}:undefined,closing:this.exiting}; }
+  private snapshot():TuiState { return {entries:[...this.entries],name:safeTerminal(this.session.name),model:safeTerminal(this.session.model),busy:this.session.busy||this.commandBusy,task:this.task,stream:this.stream,online:this.session.online,modelReady:this.session.modelReady,mode:this.session.mode,approval:this.approval?{tool:toolLabel(this.approval.tool),args:safeTerminal(JSON.stringify(this.approval.args,null,2)),id:this.approval.id}:undefined,menu:this.menu,editor:this.editor?{path:this.editor.doc.path,text:this.editor.text}:undefined,closing:this.exiting}; }
   private subscribe=(fn:(s:TuiState)=>void)=>{this.listeners.add(fn);return()=>{this.listeners.delete(fn);};};
   private refresh(){const state=this.snapshot();for(const fn of this.listeners)fn(state);}
   private endStream(){if(this.stream){this.entries.push({id:++this.sequence,role:'assistant',text:this.stream});this.stream='';}}
@@ -62,12 +83,13 @@ export class PpaTerminal {
       thinking:()=>{this.task='正在思考';this.refresh();},
       tool:({name,status})=>{this.endStream();this.task=status==='running'?'正在'+toolLabel(name||'执行工具'):'正在继续';this.line((status==='error'?'× 工具失败':status==='running'?'↳ '+toolLabel(name||'执行工具'):'✓ 工具完成'));},
       notice:(text:string)=>this.line('! '+text),
+      mode:()=>{ this.line('  权限模式已切换：'+permissionModeLabel(this.session.mode)); this.refresh(); },
       approval:(a:ToolApproval)=>{if(!this.approval)this.showApproval(a);},
       done:({reason,error})=>{this.endStream();this.approval=undefined;this.task='';if(error)this.line('! '+error);else if(/interrupt|cancel|abort/.test(reason))this.line('已中断，不会自动重发。');this.refresh();},
     };
     for(const [event,handler] of Object.entries(handlers))this.session.on(event,handler);
     for(const a of this.session.pending.values()){this.approval=a;break;}
-    this.ui=render(createElement(TuiView,{initial:this.snapshot(),subscribe:this.subscribe,actions:{submit:(text:string)=>{this.menu=undefined;void this.accept(text);},stop:()=>{void this.stop();},quit:()=>{void this.quit();},dismiss:()=>{this.menu=undefined;this.editor=undefined;this.refresh();},save:(text:string)=>{void this.saveEditor(text);}}}),{stdin:this.input,stdout:this.output,stderr:this.output,exitOnCtrlC:false,patchConsole:false});
+    this.ui=render(createElement(TuiView,{initial:this.snapshot(),subscribe:this.subscribe,actions:{submit:(text:string)=>{this.menu=undefined;void this.accept(text);},stop:()=>{void this.stop();},quit:()=>{void this.quit();},dismiss:()=>{this.menu=undefined;this.editor=undefined;this.refresh();},save:(text:string)=>{void this.saveEditor(text);},cycleMode:(dir:number)=>{const next=cyclePermissionMode(this.session.mode,dir as 1|-1);void this.session.setMode(next).catch(e=>this.line('! '+String(e)));}}}),{stdin:this.input,stdout:this.output,stderr:this.output,exitOnCtrlC:false,patchConsole:false});
     await completed;
     for(const [event,handler] of Object.entries(handlers))this.session.off(event,handler);
     this.ui.unmount();
@@ -94,15 +116,7 @@ export class PpaTerminal {
         await this.session.approve(this.approval.id, allow); this.line(allow ? '  已允许本次操作。' : '  已拒绝本次操作。'); this.approval = undefined;
         const next = this.session.pending.values().next().value; if (next) this.showApproval(next); this.prompt(); return;
       }
-      if (this.editor) {
-        if (line === '.cancel') { this.editor = undefined; this.line('  已放弃编辑。'); }
-        else if (line === '.save') {
-          const edit = this.editor; this.commandBusy = true;
-          if (!edit.lines.join('\n').trim()) throw new Error('内容为空；如需放弃请使用 .cancel。');
-          await this.session.writeMemory(edit.doc, edit.header + edit.lines.join('\n') + '\n'); this.editor = undefined; this.line('  已保存到人格/记忆，并生成原生版本记录。');
-        } else this.editor.lines.push(raw);
-        this.prompt(); return;
-      }
+      if (this.editor) return; // 编辑器由界面自己处理（Ctrl+S 保存 / Esc 放弃），不接受命令行提交。
       if (this.session.busy) throw new Error('正在回复。可按 Escape 中断后再发送，输入不会排队或重放。');
       if (!line) { this.prompt(); return; }
       this.commandBusy = true;
@@ -110,7 +124,7 @@ export class PpaTerminal {
       if (command === '/help') this.line(help);
       else if (command === '/status') {
         const c = this.session.config;
-        this.line(`  助手：${this.session.name}\n  模型：${this.session.model}\n  会话：${this.session.runtime?.conversation_id}\n  后台：${this.session.online ? '已连接' : '离线'} · 模型：${this.session.modelReady ? '已连接' : '离线'}\n  上下文：${c.contextWindow} · 最大输出：${c.maxTokens}\n  工作目录：${this.session.paths.workspace}`);
+        this.line(`  助手：${this.session.name}\n  模型：${this.session.model}\n  模型服务：${isLocalModelEndpoint(c.modelBaseUrl) ? '本机' : '远程'} · ${c.modelBaseUrl}\n  会话：${this.session.runtime?.conversation_id}\n  权限：${permissionModeLabel(this.session.mode)}\n  后台：${this.session.online ? '已连接' : '离线'} · 模型：${this.session.modelReady ? '已连接' : '离线'}\n  上下文：${c.contextWindow} · 最大输出：${c.maxTokens}\n  工作目录：${this.session.paths.workspace}`);
       } else if (command === '/reconnect') {
         this.line('  正在连接模型…'); await this.session.changeModel(readConfig(this.session.paths), () => {}); this.line('  模型已连接，可以继续聊天。');
       } else if (command === '/history') this.printHistory(await this.session.history(), 20);
@@ -124,8 +138,11 @@ export class PpaTerminal {
         this.printHistory(await this.session.open(s.id));
       } else if (command === '/model') {
         const profiles = readProfiles();
-        if (!args || args === 'list') { this.menu={title:'选择模型配置',items:Object.entries(profiles).map(([name,c])=>({label:name,detail:`${c.modelBaseUrl} · ${c.contextWindow} 上下文`,command:`/model ${name}`}))}; }
+        if (!args || args === 'list') { this.menu={title:'选择模型配置',items:Object.entries(profiles).map(([name,c])=>({label:name,detail:`${isLocalModelEndpoint(c.modelBaseUrl) ? '本机' : '远程'} · ${c.modelId ?? '自动选择首个模型'} · ${c.contextWindow} 上下文`,command:`/model ${name}`}))}; }
         else { this.line('  正在验证并切换模型…'); await this.session.changeModel(selectProfile(args, profiles), writeActiveConfig); this.line(`  已切换：${args}`); }
+      } else if (command === '/mode') {
+        if (!args) this.menu={title:'权限模式',items:permissionModes.map(m=>({label:permissionModeLabel(m),detail:m===this.session.mode?'当前模式':permissionModeDetail(m),command:`/mode ${m}`}))};
+        else { const m = args as PermissionMode; if (!permissionModes.includes(m)) throw new Error(`未知权限模式：${args}。请输入 /mode 查看。`); await this.session.setMode(m); this.line(`  正在切换权限模式：${permissionModeLabel(m)}`); }
       } else if (command === '/persona' || command === '/memory') {
         const current = await this.session.memories();
         if (!args || command === '/persona' || !this.documents.length) this.documents = current;
@@ -135,10 +152,24 @@ export class PpaTerminal {
         if (doc) {
           const header = doc.content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/)?.[0] ?? '';
           this.line(`\n  ${command === '/persona' ? '人格' : doc.path}\n${doc.content.slice(header.length)}`);
-          if (edit) { this.editor = { doc, header, lines: doc.content.slice(header.length).trimEnd().split('\n') }; }
+          if (edit) { this.editor = { doc, header, text: doc.content.slice(header.length).trimEnd() }; }
           else this.menu={title:command==='/persona'?'人格':'记忆',items:[{label:'编辑正文',detail:'Ctrl+S 保存，Esc 放弃',command:command==='/persona'?'/persona edit':`/memory edit ${this.documents.findIndex(d=>d.path===doc.path)+1}`}]};
         } else if (edit || command === '/persona' || args) throw new Error('未找到该记忆，请先用 /memory 查看序号。');
         else { this.menu={title:'人格与记忆',items:this.documents.map((d,i)=>({label:d.path,detail:d.description,command:`/memory ${i+1}`}))}; }
+      } else if (command === '/image') {
+        if (!this.session.modelReady) throw new Error('模型服务尚未连接。启动服务后输入 /reconnect，或用 /model 切换配置。');
+        const { path, question } = splitImageArgs(args, existsSync);
+        if (!path) throw new Error('请提供图片路径：/image "图片路径" [问题]。含空格的路径请用引号。');
+        const stat = statSync(path);
+        if (stat.isDirectory()) throw new Error(`该路径是目录，不是图片文件：${path}`);
+        const mime = imageMediaType(path);
+        if (!mime) throw new Error(`不支持的图片格式。支持：${[...imageExtensions].join(' ')}`);
+        if (stat.size > 20 * 1024 * 1024) throw new Error('图片超过 20MB 上限，无法发送。');
+        const data = readFileSync(path).toString('base64');
+        const text = question || '请看看这张图片。';
+        this.entries.push({ id: ++this.sequence, role: 'user', text: safeTerminal(`📷 ${path}${question ? '\n' + question : ''}`) });
+        this.task = '正在回应'; this.refresh();
+        await this.session.send(text, [{ mimeType: mime, data }]);
       } else if (command.startsWith('/')) throw new Error('未知 PPA 命令。输入 /help 查看。');
       else { this.entries.push({id:++this.sequence,role:'user',text:safeTerminal(raw)}); this.task='正在回应'; this.refresh(); await this.session.send(raw); }
       this.prompt();

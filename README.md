@@ -1,6 +1,6 @@
 # Persistent Personal Agent
 
-拥有独立中文终端界面的本地个人助手。PPA 提供聊天、会话、人格/记忆编辑、模型配置切换和工具审批；Letta 在后台管理 Agent 执行与持久状态。默认界面显示 PPA 和助手自己的名字，不再启动 Letta 的终端界面。
+拥有独立中文终端和 Windows 桌宠界面的本地个人助手。PPA 提供聊天、会话、人格/记忆编辑、模型配置切换和工具审批；Letta 在后台管理 Agent 执行与持久状态。默认界面显示 PPA 和助手自己的名字，不再启动 Letta 的终端界面。
 
 ## 启动
 
@@ -19,6 +19,46 @@ PPA 在运行期间启动一个受认证保护、仅监听本机随机端口的�
 
 依赖固定为 `@letta-ai/letta-code@0.31.12`，不依赖全局安装，不修改上游或 node_modules。Letta 自身仍间接使用 pi-ai；本项目已移除 Pi Coding Agent 运行时和直接 Pi 依赖。
 
+## 桌宠日常接口
+
+首次安装需要 Python 3.10 或更新版本（64 位），使用项目内独立虚拟环境：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop-pet/setup.ps1
+npm run pet
+```
+
+本机依赖已安装，也可以双击根目录的 **`启动桌宠.vbs`**，无控制台窗口启动。桌宠读取 `nuonuo_dev_assets` 的原始图片和声音；素材目录需要随项目保留。原参考项目 `D:\Workplace\pet\nuonuo_python` 不参与启动，也没有被修改。
+
+- **单击角色**只在角色旁打开一行输入气泡，Enter 发送后自动收起；回复会流式显示在角色头顶，不弹出完整聊天窗口。头顶气泡最多展示约 300 字，较长回复保留开头和结尾，完整内容仍在会话历史中。
+- 左键拖动和快速松手可以抛掷；右键可选择“快速说句话”“打开完整聊天”、喂点心、抱抱鼠标、跳跃、睡觉及唤醒。托盘双击唤回角色并打开完整聊天。
+- 聊天支持中文流式回复、图片、停止、历史会话、新对话、人格与记忆编辑、模型和权限模式。Enter 发送，Shift+Enter 换行；Escape 在生成时停止，空闲时收起窗口。
+- “睡觉”“醒醒”“回来”“回家”“跳一下”“翻个滚”“抱抱”“吃点心”是完整匹配的本地动作指令，其他输入交给当前助手。模型回复不会被当作桌面操作命令执行。
+- 审批面板显示工具与完整参数，“允许本次”和“拒绝”沿用 PPA 原生权限。首次使用默认为标准审批；思考期间仍可切换权限，所选模式会在会话切换和重启后保留。
+- 角色沿窗口边缘自主行走、攀爬、滑落，保留原动画的时序及睡眠过渡。聊天打开或后台忙碌时减少走动；拖拽、下落等物理状态优先。审批和错误气泡不会被闲聊覆盖。
+- 右键设置可调整大小、素材声音、专注模式和主动搭话。主动短句在本地触发，至少间隔 45 分钟、每日最多 6 次；忙碌、专注、审批、睡眠及离开电脑时暂停。不会定时调用模型。
+
+桌宠本身只使用鼠标位置、窗口几何和系统空闲时间，不读取窗口标题、桌面文件名，也不监听删除。助手只在用户要求查看屏幕或当前任务明确需要可见内容时调用受限读屏工具，不做周期截图。图片也可以通过用户选取的附件发送；虚拟点心不涉及真实文件。第一版没有语音识别、回复朗读或开机自启。
+
+桌宠沿用现有 Letta Agent ID、人格、记忆、模型和会话；`npm start` 的终端入口仍保留。同一数据目录只有一个 PPA 后台，使用桌宠前请退出终端；重复启动桌宠会唤起已有窗口。关闭聊天面板只是收起，右键“退出桌宠”才会停止所属后台。模型离线时仍可运行桌宠、访问可用记忆并手动重连，输入不会自动重发。
+
+`PPA_DATA_DIR` 的默认值仍为 `.ppa`。桌宠自己的配置、位置、生活状态、主动次数和日志位于其 `pet/` 子目录，和助手长期记忆分开；PPA 备份会包含这些状态，旧备份缺少它们时使用默认值。备份前关闭桌宠。调试入口可指定 `--data-dir`，例如 `npm run pet -- --data-dir .ppa/pet-demo --no-backend`（仅动画演示）。
+
+实现位于 `desktop-pet/`，Python `QProcess` 通过 JSON 行协议调用 `src/pet-bridge.ts`，由桥接层复用 `PpaSession`。Qt 不等待模型，图片预加载、状态合并队列和后台存档保持动画响应。固定版本 Letta 0.31.12 的回合结束事件早于异步清理，跨回合可能出现审批失效；桌宠在新输入前重新连接所属运行时，保留会话与所选权限模式，不重建 Agent。若停止请求未能结束挂起流，关闭所属子进程后恢复同一会话，不重发输入。停止不撤销已经完成的工具操作。
+
+桌宠验证命令：
+
+```powershell
+npm run build
+npm test
+npm run test:pet
+npm run smoke:pet         # 隔离数据、真实后台、可控模型响应
+npm run smoke:pet:live    # 隔离身份、当前真实模型：聊天/图片/审批/记忆恢复
+npm run smoke:pet:gui     # 在上一条创建的隔离身份中操作实际 Qt 窗口
+```
+
+本机验收报告位于 `.ppa/reports/pet-*.json`，不写入正式助手。已完成真实 Qt 窗口中文输入、流式回复、图片、按钮审批后的文件写入和停止；中文输入法提交事件通过自动化模拟验证，未覆盖各输入法的候选窗操作。30 分钟桌宠运行记录约 11.25 万次更新，无界面/音频错误，帧间隔中位数 16.0 ms、P95 16.8 ms；预热后工作集约 243–251 MiB，CPU 时间折合单核约 6.5%。此数据针对本机单屏，混合 DPI 多屏只有合成物理测试，尚未实机验证。
+
 ## 模型与数据
 
 配置示例在 `config/local.example.json`，可用 `config/local.json` 覆盖：
@@ -28,22 +68,37 @@ PPA 在运行期间启动一个受认证保护、仅监听本机随机端口的�
   "modelBaseUrl": "http://127.0.0.1:8080/v1",
   "modelId": null,
   "contextWindow": 32768,
-  "maxTokens": 4096
+  "maxTokens": 4096,
+  "provider": "llama-cpp"
 }
 ```
 
+`provider` 默认 `openai-compatible`，目前还支持 `llama-cpp`。llama.cpp 服务通过原生 `/models` 无法被 0.31.12 正确识别视觉能力（它只读 `architecture.input_modalities`），PPA 会在 `llama-cpp` 连接下启动一个仅监听本机随机端口的模型能力桥：把原生发现探测改为 404，强制运行时走 `/props`（它读取 `modalities.vision`），其余请求原样转发；图片因此能作为用户消息真正送达视觉模型。桥只在 `llama-cpp` 提供方启用，`openai-compatible`（如 vLLM）行为不变。
+
 `modelId: null` 在初始化或选择该模型配置时使用服务的首个模型，后续启动沿用已保存选择。终端 `/model` 列出项目配置，`/model ornith` 或 `/model qwen3.8` 在空闲时切换；人格、记忆和当前会话保留。contextWindow 必须与模型服务匹配，PPA 不调整服务端上下文。初始化使用对应 0.31.12 的本地状态适配器，运行中的编辑和切换通过原生接口完成；升级版本前须重新验证接口。
 
-`PPA_MODEL_API_KEY` 是可选环境变量，不写进报告、记忆或仓库。Letta 自身将 provider 凭据保存在本机，文件未加密。远程 modelBaseUrl 会把上下文发送到该服务。
+`PPA_MODEL_API_KEY` 是未指定独立凭据变量时的兼容环境变量。在线配置应使用 `apiKeyEnv` 指向自己的环境变量；配置文件只保存变量名，不保存密钥。Letta 连接 provider 时会在本机保存实际凭据，其文件未加密且不进入 PPA 备份。远程 `modelBaseUrl` 会把对话上下文、工具结果和你主动发送的图片交给该服务，请按其隐私政策选择服务。
 
 ### 模型配置与切换
 
 预置模型配置在 `config/models.example.json`，当前包含：
 
-| 配置名 | 地址 | 模型 ID |
-| --- | --- | --- |
-| `qwen3.8` | `http://127.0.0.1:8080/v1` | 启动时取该服务返回的首个模型 |
-| `ornith` | `http://127.0.0.1:8000/v1` | `Ornith-1.5` |
+| 配置名 | 地址 | 模型 ID | 提供方 |
+| --- | --- | --- | --- |
+| `qwen3.8` | `http://127.0.0.1:8080/v1` | 启动时取该服务返回的首个模型 | `llama-cpp`（llama.cpp，支持多模态） |
+| `ornith` | `http://127.0.0.1:8000/v1` | `Ornith-1.5` | `openai-compatible`（vLLM） |
+
+添加任意提供 `/v1/models` 与 `/v1/chat/completions` 的在线 OpenAI-compatible API（密钥不会写入 JSON）：
+
+```powershell
+$env:MY_LLM_API_KEY = "在这里填写密钥"
+npm run model -- add cloud --base-url "https://你的服务地址/v1" --model "服务返回的模型ID" --api-key-env MY_LLM_API_KEY --context-window 32768 --max-tokens 4096
+npm run model -- use cloud
+npm run doctor
+npm start
+```
+
+`add` 只写入被 `.gitignore` 排除的 `config/models.json`，不会立即改变当前助手；`use` 才会验证凭据和 `/models`、切换固定 Agent 的模型并更新 `config/local.json`。远程地址通过此命令添加时必须使用 HTTPS。以后启动 PPA 前仍需让同名环境变量存在；如需跨 PowerShell 会话保存，请使用系统的安全凭据管理方式注入，而不要把 Key 写进仓库、命令参数或 JSON。
 
 可以直接在 PPA 终端输入 `/model ornith`。若使用外部配置命令，先退出正在运行的 PPA 实例，再执行：
 
@@ -81,7 +136,7 @@ npm start
 
 ## 日常使用与行为边界
 
-直接自然聊天，Enter 发送。PPA 不在回复过程中排队新的聊天输入，Escape 或 `/stop` 中断当前回复；已发生的副作用不会撤销，中断内容不会自动重发。`/quit`、`exit` 或空闲时 Ctrl+C 正常退出。
+直接自然聊天，Enter 发送。PPA 不在回复过程中排队新的聊天输入，Escape 或 `/stop` 中断当前回复；已发生的副作用不会撤销，中断内容不会自动重发。`/quit`、`exit` 或空闲时 Ctrl+C 正常退出；记忆编辑有未保存内容时 Ctrl+C 会先询问。
 
 | 命令 | 用途 |
 | --- | --- |
@@ -93,14 +148,22 @@ npm start
 | `/memory` / `/memory 序号` | 列出原生记忆文件、查看内容 |
 | `/memory edit 序号` | 编辑指定记忆正文 |
 | `/model` / `/model 配置名` | 查看并切换项目模型配置 |
+| `/mode` / `/mode 模式名` | 查看并切换权限模式；输入框直接按 Tab / Shift+Tab 循环切换（同 Claude Code） |
+| `/image 路径` / `/image "路径" 问题` | 发送图片给助手（需模型支持视觉） |
 | `/reconnect` | 模型服务恢复后重新连接 |
 | `/status` | 查看助手、模型、会话和工作目录 |
 
-编辑时输入完整的新正文，单独一行 `.save` 保存并生成原生 Git 版本记录，`.cancel` 放弃；文件描述等元数据会保留。保存前核对原文版本，避免覆盖期间发生的记忆更新。工具需要审批时显示名称与参数，输入 `y` 只允许本次、`n` 拒绝，不追加长期授权。
+编辑时输入完整的新正文，Ctrl+S 保存并生成原生 Git 版本记录，Esc 放弃；文件描述等元数据会保留。保存前核对原文版本，避免覆盖期间发生的记忆更新；有未保存修改时按 Ctrl+C 会先确认是否放弃修改并退出（y 确认 / n 或 Esc 返回）。工具需要审批时显示名称与参数，输入 `y` 只允许本次、`n` 拒绝，不追加长期授权。
+
+权限模式（首次使用默认为标准审批，不继承旧 PPA 授权）：`/mode` 列出并切换；像 Claude Code 一样，聊天输入框直接按 **Tab** 向后循环、**Shift+Tab** 向前循环（有 `/` 补全项时 Tab 仍优先补全），模型思考期间也可以切换，底栏实时显示当前模式。`standard` 常规逐次确认；`acceptEdits` 自动批准文件写入/编辑/记忆（其余仍需确认）；`unrestricted` 全部工具免确认（谨慎使用）；`strict` 更保守、无自动放行。所选模式保存在当前 PPA 数据目录，并在会话切换、后台重连和应用重启后继续使用。
+
+多模态：输入 `/image "图片路径" [问题]` 把图片随消息发给助手；含空格的路径用引号。支持 PNG/JPG/JPEG/GIF/WebP/BMP/HEIC/HEIF，单张不超过 20MB。图片作为用户消息的一部分走原生多模态通道，不经工具链；是否真正送达取决于模型服务的视觉能力（llama.cpp 场景由模型能力桥识别，qwen3.8 服务声明支持多模态并已真实验收）。若后端无法处理图片，该回合自动降级为纯文本（不报错、不重发）。图片会以 base64 发送到配置的本地模型服务，不出本机，但会进入该会话的本地历史。
+
+读屏工具：当你让助手“看看我的屏幕”或当前问题明确需要屏幕内容时，助手可以调用 `capture_screen` 读取主屏幕（也可选择全部显示器）。这是 PPA 内置的受限本机工具，不再为每次读取弹出审批；它只接受显示器范围和缩放上限，不提供任意命令入口。PPA 不生成独立截图文件，图像作为工具结果发送给当前模型，并可能保留在本机 Letta 会话历史中；远程 `modelBaseUrl` 会把图像发送到对应服务。该能力目前仅支持 Windows，并要求后端模型具备视觉能力。
 
 独立 reasoning 通道只显示思考状态，不打印内容。**当前 Ornith/vLLM 有时把英文思考直接作为普通正文返回**，没有可识别的通道或标记时，界面无法可靠区分它与正常回答；本次真实验收已观察到此情况。PPA 不通过删除英文句子的方式隐藏它，历史中也可能保留这种普通正文。
 
-默认使用 `standard` 审批模式，不继承旧 PPA 授权。启用 bundled/agent 技能；不自动加载旧扩展、全局技能或全局 Mods。旧 memoryBudgetChars、reflectionMaxTokens、reflectionTimeoutMs、extensions、skills 配置不再生效，会给出提示。此次不配置后台反思、常驻服务、定时任务、消息渠道或云端。
+首次启动使用 `standard` 审批模式，不继承旧 PPA 授权；此后使用当前数据目录中保存的选择。启用 bundled/agent 技能；不自动加载旧扩展、全局技能或全局 Mods。旧 memoryBudgetChars、reflectionMaxTokens、reflectionTimeoutMs、extensions、skills 配置不再生效，会给出提示。此次不配置后台反思、常驻服务、定时任务、消息渠道或云端。
 
 人格、记忆和会话已经交给 Letta，旧 PPA 的候选审核、忘记隔离、执行账本及自定义 reflect 节奏已移除。**删除当前记忆不等于删除聊天历史或 MemFS 的 Git 历史**，旧事实仍可能通过历史检索找到。工具权限采用 Letta 原生行为，不是操作系统沙箱；取消不会撤销已发生的副作用。
 
@@ -136,15 +199,17 @@ npm run build
 npm test
 npm run smoke:letta:integration  # 真实发布包 CLI + 本地模拟 HTTP/SSE
 npm run smoke:live              # 真实本地模型；创建隔离测试数据
-npm run smoke:interface         # PPA 交互层 + 真实原生后台 + 模拟模型
+npm run smoke:interface         # PPA 交互层 + 真实原生后台 + 模拟模型（含批准后真实读屏）
 npm run smoke:terminal          # PPA 自有终端 + 当前真实模型，隔离验收身份
+npm run smoke:image             # 真实模型多模态：发图并核对模型回答内容
+npm run smoke:screen            # 实际截取当前主屏并验证 PNG 工具结果
 ```
 
-当前 11 项自动化测试通过；新增 PPA 接口的 11 项集成检查覆盖流式聊天、会话恢复、记忆提交和冲突保护、真实文件审批/拒绝、中断、模型切换及离线记忆访问。自有终端已在真实 Windows PTY 和 vLLM Ornith 上验证中文回复、人格编辑、键盘批准文件写入、Escape 中断及正常退出。迁移阶段的 Qwen 记忆、工具和备份恢复验收继续保留为历史证据。
+当前 33 项自动化测试通过；新增 PPA 接口的 14 项集成检查覆盖流式聊天、会话恢复、图片消息到达视觉模型、无需单独审批的真实读屏工具结果、记忆提交和冲突保护、真实文件审批/拒绝、思考期间权限模式切换及重启保留、中断、模型切换和离线记忆访问。自有终端已在真实 Windows PTY 和 vLLM Ornith 上验证中文回复、人格编辑、键盘批准文件写入、Escape 中断及正常退出。迁移阶段的 Qwen 记忆、工具和备份恢复验收继续保留为历史证据。
 
 本机报告位于 `.ppa/reports/letta-live.json`、`letta-integration.json`、`letta-pty.json` 和 `letta-migration-verification.json`。这些结果不保证长期陪伴体验或所有自然表达的记忆成功率；本地模型的工具选择和推理耗时仍会波动。
 
-新界面报告在 `.ppa/reports/ppa-interface.json`、`ppa-tui-real.json`；验收身份和文件位于隔离目录，不写入正式助手。上游终端命令不会自动透传到 PPA 界面，其他高级原生功能仍可通过维护入口访问。
+新界面报告在 `.ppa/reports/ppa-interface.json`、`ppa-tui-real.json`、`ppa-image.json`；验收身份和文件位于隔离目录，不写入正式助手。上游终端命令不会自动透传到 PPA 界面，其他高级原生功能仍可通过维护入口访问。
 
 失败记录仍保留：Windows 文件授权通配规则未匹配曾导致工具被拒绝并超时，文件操作复测使用原生 acceptEdits 授权，正式入口仍为 standard。完全无输出的挂起模拟流曾未及时结束；已通过的流式中断测试不代表所有网络挂起情况。
 

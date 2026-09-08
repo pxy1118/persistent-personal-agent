@@ -17,13 +17,20 @@
     "start": "tsx src/ppa-terminal.ts",
     "smoke:interface": "tsx scripts/ppa-integration.ts",
     "smoke:terminal": "tsx scripts/ppa-tui-smoke.ts",
+    "smoke:image": "tsx scripts/ppa-image-smoke.ts",
+    "smoke:screen": "tsx scripts/ppa-screen-smoke.ts",
     "model": "tsx src/letta-cli.ts model",
     "doctor": "tsx src/letta-cli.ts doctor",
     "build": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "smoke:live": "tsx scripts/letta-smoke.ts",
     "backup": "tsx src/letta-cli.ts backup",
-    "restore": "tsx src/letta-cli.ts restore"
+    "restore": "tsx src/letta-cli.ts restore",
+    "pet": "node desktop-pet/launch.mjs",
+    "test:pet": "desktop-pet\\.venv\\Scripts\\python.exe -m pytest desktop-pet/tests -q",
+    "smoke:pet": "tsx scripts/pet-smoke.ts",
+    "smoke:pet:live": "tsx scripts/pet-smoke.ts --live",
+    "smoke:pet:gui": "desktop-pet\\.venv\\Scripts\\python.exe desktop-pet/qa_live.py"
   },
   "dependencies": {
     "@letta-ai/letta-code": "0.31.12",

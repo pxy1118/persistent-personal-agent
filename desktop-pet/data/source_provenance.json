@@ -1,0 +1,1247 @@
+{
+  "original_assembly_sha256": "88745079f17e686d36183149459a5f61a848d48419a674a66534195547e879db",
+  "analysis": "../analysis/README.md",
+  "resource_origin": "../nuonuo_dev_assets/assets",
+  "animation_clips": 21,
+  "dialogue_cues": 44,
+  "voice_categories": 10,
+  "assets": [
+    {
+      "file": "assets/audio/voice/糯糯_002.wav",
+      "sha256": "a72517174d7a633fc7ba3292f94660d5b6cdafd19ea6fcb4b4e8f8b63be0c082"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_015.wav",
+      "sha256": "82ae5089221207a72baed7ba85b752dc473aac4a0880f7723afba7b0793f0331"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_017.wav",
+      "sha256": "39307de0c272e6db9234ab9e0526793ccb6c3c558939debb09ff7d1a512ba52e"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_018.wav",
+      "sha256": "812591fdc1f246219df165deedb9a4b68a555c33030a6dec2e7c7c754fa6024b"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_019.wav",
+      "sha256": "635c04fb4b7d61d9f253b05cda933e821e4534a3964e92bd57901886585fdcf9"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_024.wav",
+      "sha256": "62f18de2347e07c3df809667d90f877649e9bf181d0042cff0c6e9a1223f8c32"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_030.wav",
+      "sha256": "1a877a94a4727e8c0b115be2717b1e168c93fbc12d8ce26f6fc1ce6498c6d570"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_冷静.wav",
+      "sha256": "3c10a36df14453e420d56803ae08281720f12c7a8f8fbeee0a419fcd14c8341e"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_委屈.wav",
+      "sha256": "40763bbeed036f569bcdaabdaf65ecd8709fafe8e93ed6b48ac0b6aff7c77579"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_快速.wav",
+      "sha256": "1acae75a7a55df8075e42df5237a1d6299c7746d4f13c1fbd0a57b42bc92875b"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_惊恐_控制不住自己.wav",
+      "sha256": "7f5a7196d391367a3f542836de2f517aacfe07f8696dc7054c68abf8eb2b808f"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_有点委屈.wav",
+      "sha256": "84ae6298013b4207722892b2c3076c919e6e1f53a2a3f8a3c3c7d1516bc494f2"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_正常.wav",
+      "sha256": "8550955a5c5d84771191362282dcb25221c469934d75144c6d90f9d81b137b06"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_正常02.wav",
+      "sha256": "29d49cc12bf28a71db5dd9eff410a0185691201a2530bf266de332efbc5797f4"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_正常03.wav",
+      "sha256": "6e9728cce5e966258a6fbbc1b76defa6b9bc0e7d35ef4eb60123f6f05833bf8f"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_正常04.wav",
+      "sha256": "ba75a1f0f2e57790114425c7a546dbd747cfc17e216dc059fa36801f47a075e6"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_疑问.wav",
+      "sha256": "6ffdfd3dc127781821c41b7f007e06085cde1e2ea5b8749589b39cbc5f75efd8"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_积极.wav",
+      "sha256": "93910a52bac0944d386b979d4fd8562fe84671045d3eb49dafc1e6d336c95227"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_表示肯定.wav",
+      "sha256": "929ddce2d16f19fa491c06771b797f4fa08068796b8eb3137bd593dd461ca2f8"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_超级伤心.wav",
+      "sha256": "3253ba5c59892fddefac143f15da3b8378d03d2f5bf3ae0ac1d9ba10f96252ea"
+    },
+    {
+      "file": "assets/audio/voice/糯糯_软.wav",
+      "sha256": "3158fa213985f57fe2423503f13421b3be84afc1e4d28e785ff7d3c3f0d80ebd"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_00.png",
+      "sha256": "21f5ed563e940c3d169a6723440c9d73112d2203d5b22b2c7a8d6360bcc6275a"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_01.png",
+      "sha256": "5fb1f332efe28e098a0497adb84e23ed8a1d49b4772069fcc567cd9a3b9dd23b"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_02.png",
+      "sha256": "23e546f5a3fcac79fca69fc3b349028a5809227107c8faf8a9083794ee70cdd2"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_03.png",
+      "sha256": "48e56afcf44ce43057c04df07bf9e9decaa2f79f6b5155efb5a49bf189f50139"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_04.png",
+      "sha256": "99b5bde3c2219e0e2ba06b5e26a370806921942576ba684485c8b7df41420e69"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_05.png",
+      "sha256": "e3486aef7f852e7ee0ea9f60ba2e1770a1714f11496de0dba012edd32ec6ad12"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_06.png",
+      "sha256": "9df3b64ba1c8106fd73bd53cd79c9d68f2bf490825b66c87aa61e7cc3e95bfbe"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_07.png",
+      "sha256": "ceaa6bfcb67ffcaaeabbdea2a18ab7ebbc75ba65a82375bfb5acddcc97e8343d"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_08.png",
+      "sha256": "319ad162fd5ff973ebf387f762495500316f5834e869abc588eca5393d2a1745"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_09.png",
+      "sha256": "49463f86005fbaef91c61ea385bab312bc2bd7c3c7c061d82b6c6fcae93fe59d"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_10.png",
+      "sha256": "0c205caa41d40de5bcf73d0a475ec5310a6e8309da3e56dd6d06b028202b42b1"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_11.png",
+      "sha256": "12e57103afa5a5635fc8ed2d3dd760dd83e6c1eda074864804ba9f6bbec71a26"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_12.png",
+      "sha256": "39ef29569cb2f1b3086096fe20691a23ab15b42f4d133194e900d86d36b5ed13"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_13.png",
+      "sha256": "032dae206801fb2a03a93d1259388890d5e751d4112271fe17ee3e266a970e2b"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_14.png",
+      "sha256": "48fed2ee3671718f74b8fd2f9727b71acc584998319191017b4b16fc513d39f7"
+    },
+    {
+      "file": "assets/sprites/runtime/chomp/frame_15.png",
+      "sha256": "932d9b7cee866619cb7627388d483ec4e8a3a8e855f92da81fc73bd7d0d663df"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_00.png",
+      "sha256": "34ac1181cc2be6e8eb044527f8ecc3035586a3d4435e9a56fe39ac440a24f17e"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_01.png",
+      "sha256": "e2094eaf4d8bd386ad93189a9acdb888230b6d0250c1664da1d36605fc3d8a3c"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_02.png",
+      "sha256": "a17d5f578f05fd6746ffee6edd15dbc15e6ff599b95a6124724d1b6e56732968"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_03.png",
+      "sha256": "9297c78c5e0bad7b03e51c513a2b8a506cf59a8f6dd078fe3542b8c2056b4fb6"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_04.png",
+      "sha256": "a34444edb834646d25c185ab9bd265022ce4432fea52c1f9855be8fb115297cb"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_05.png",
+      "sha256": "890d3091410b0d1ca0aa018034d74bde10992f198599a02ade8b1cdfbff7c30d"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_06.png",
+      "sha256": "56747bd462856b70e54a0a9eebdb4181f26964db051e1ac54c5a4182efb2d207"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_07.png",
+      "sha256": "42ae8d936f662a21d5103f22a916f842aec675ec7b836d603e95b2c35d5e6de2"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_08.png",
+      "sha256": "7efe46f9141eedf854c1436d17bc6cfa5873f3ae8a283366e5d35daf11b1e557"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_09.png",
+      "sha256": "40cb842197de114d7c87bf8ee4ea862d326c64ce13c96aa515cd89115a8364f2"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_10.png",
+      "sha256": "d1c3b57e15e649137ccc74e9413ea1bec3c63c79eb890a9a35704d65d1c7c0b4"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_11.png",
+      "sha256": "3c9628c55b503ff07acb17c084cabea33a391363af6c621337aa4602a382dc0e"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_12.png",
+      "sha256": "1fda9d78cd51ab13ad77dac24ce28d73ee4fd49130c931009dde12ff571be029"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_13.png",
+      "sha256": "9a974330202f5f9a6576b6618403c1236c8fd695c2636329ede5bf89826b8f3d"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_14.png",
+      "sha256": "615f8b02b739e73173e99e81248cb5caadbcd4d3458962e211acd717e2820dc0"
+    },
+    {
+      "file": "assets/sprites/runtime/climb/frame_15.png",
+      "sha256": "0cd6fc84c91b0c4568a17053993d5d12d84ff2001552fc026acfca4777cf5164"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_00.png",
+      "sha256": "e7c0486e326880a619a8123fc91f040249322aedf49ccf441dc64fc07fba3a39"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_01.png",
+      "sha256": "94ad9231664bfbc69e88734989857a87f494f4745a74c86217b85fba5d5deda4"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_02.png",
+      "sha256": "ffb3548b39214dba0a53ccfa5d84fcade7c4df9dbc83c2320b0772261ebad296"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_03.png",
+      "sha256": "3fd29d7e2738bbf6db9359bef994db5871f13eca6734c40dd8bb79ebc1ecffb2"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_04.png",
+      "sha256": "ee9c08ac5e6837f6ac7a8dc3d7e54e3c4c143887f672db64e72d648ddd0f2d18"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_05.png",
+      "sha256": "bdff8639a09222a1a834f590f715ee76043c4bbdd25c1f080c3d80fa9a1de6c1"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_06.png",
+      "sha256": "b2e2539372869b43bff1c04b67f5f8e33e281e815a816f1ba5af53714aeb99de"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_07.png",
+      "sha256": "4b1029da258d5f18a29f0590e9ec3183ea4963dae6991760bf46b097779c5f4a"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_08.png",
+      "sha256": "a40b2de829297dcc8a6450ff0b12dc5188249332a6c2126887ad2fb2760e7455"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_09.png",
+      "sha256": "34af56bf8704385544bc4113298f8b1283ba8f632adb019eea510cf95d7e6777"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_10.png",
+      "sha256": "f877108b4cf04fddc78de0b27c1bac3922470e5fe4f7c0acd29d7a4a8ec682bb"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_11.png",
+      "sha256": "f6a869dad1deab0e1391723249094688224f019fc44d59b2d62f85d0e5eff09b"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_12.png",
+      "sha256": "dfddaaa5323707ce41a4a06787a807c0aa30349b5b354da8da79fc1af14d7446"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_13.png",
+      "sha256": "5d698201523e54bc227c848b35c2612b04f02f8005d2e49ebcfac9d892d38e47"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_14.png",
+      "sha256": "f1faec8263b060366f8172a518d8e8473fc4917977f9c81478c921772933847e"
+    },
+    {
+      "file": "assets/sprites/runtime/curious/frame_15.png",
+      "sha256": "e117badcd9707ecae020a7e50955c1a8524ccb0c5faf563385223d85711abc1f"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_00.png",
+      "sha256": "1bc8212cff8b17b9ce6d99b2aaa3ddf8e9ab35d1c1247f201657c1788cde430d"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_01.png",
+      "sha256": "4b40f2bb63e63df287937b429e4800f4a2bbe90cdcc69948b67bfac7f2be55a4"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_02.png",
+      "sha256": "971169af7f1362f756de5d92d9ef158dd78446fc93df156e72fde00b02ea204b"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_03.png",
+      "sha256": "b796898002a34c36004bd02e9b4addf02c1445cf17c40d2f13d3305d68f95c22"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_04.png",
+      "sha256": "54ae93ee18812b56fab7d25b6ffdebd50ce08b927c6dae0a2de603ed8aa96a77"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_05.png",
+      "sha256": "2f1c7f85e510a3527c55862c188d78bc08be585ada8eb6725e81f2d6bb422d32"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_06.png",
+      "sha256": "3864e5c67f0074db7b4994cafefc1e0730d8165a5c2d2519c9c78338fd8f3f91"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_07.png",
+      "sha256": "b16aeae7f1629a1c39f441119c0b56dfa341d64f87bc7d36568ed206a0572d64"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_08.png",
+      "sha256": "9c03eb1d762c82bec466e41be944916f1fb109ed1d69bf2afaaeb0f5a80a8451"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_09.png",
+      "sha256": "26ae43ea234c57ec27237a77c8db7eb31eb4b27ebf797ae1953d0ce432443143"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_10.png",
+      "sha256": "e0a75b9e5b9b7b75808a10587cabbca773399056034510431022eb2592113917"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_11.png",
+      "sha256": "687fe8eddf2b2c95ebfb51a7df539ea150410c20d4f60f0340dad1ac6c38b567"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_12.png",
+      "sha256": "2dcee313fde826e47df628ee4ac5ac00d4570652a86ae4c919598d0bc71631a0"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_13.png",
+      "sha256": "294affcdec48b39918db9ee6cd106bc590dd85df94c0b5983def3dafce3704d5"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_14.png",
+      "sha256": "8d2128a9e06fd25f06f5d76ed7cf5c368c0089d381343b842cc3a221b0852f65"
+    },
+    {
+      "file": "assets/sprites/runtime/drag/frame_15.png",
+      "sha256": "bca9b3a4ed52b8b4d26b3797045ce2937fd56c06876efa58c3ffd74797d385f4"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_00.png",
+      "sha256": "bf3b81f79e3aae2941a7e317a13b58df13b3e5f08060bcb080c5c813155b341e"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_01.png",
+      "sha256": "317aeaa377525b5d3f75c289dda43e7a054375250a05e1cabf8d2f2ae9f56f26"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_02.png",
+      "sha256": "41152a43236c03a178c3b25d67e9e0ade617c90e86c20560065177656ceebe49"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_03.png",
+      "sha256": "0eab480af60682bf60aaebc886ba43d5d76b49a9bf22b3fb5632204cb67ed47b"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_04.png",
+      "sha256": "45988903beac3d2b98f6917303a53aa60e0b071c9b2d42c209bc8e99788a49d2"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_05.png",
+      "sha256": "ee3103cb9d4e784636de3bfc3614eb2bb1ae480152f70511e1e9c7640086583e"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_06.png",
+      "sha256": "2dea0945e55a4f1e378abc1fb1b19b602bcafeabadc33fa3908fb79e57d63097"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_07.png",
+      "sha256": "f97b251d78ccca81908a379452a0b11a99d13fbf55871bcbf25e5c030ad5e3b5"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_08.png",
+      "sha256": "000c5171907ea14eec39180ef6821dc0489ad65fd1c454da326c0495a8b1b857"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_09.png",
+      "sha256": "6441aa5b959074208c4ac1a2525a1bf7762f04567ad84ad36ba0be2487ee91b9"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_10.png",
+      "sha256": "04c03d2457ac68eb74e92bea29ec8b5625021fe3d49c65193844feb7034b35ec"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_11.png",
+      "sha256": "dde31134248dfc5f5ec444558e27b74ef3bd0816c6929f79176f34ad28f1e2bd"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_12.png",
+      "sha256": "d4ec98fa3f22afc529404cd88706c486cd569b4a710d3e8ef58cbda3f53fb032"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_13.png",
+      "sha256": "21694150ca1b75f1dbf98838e5796b2fc551df8b834a5eb08c088fe747782580"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_14.png",
+      "sha256": "1abfeeefc1fa7edda8a398e7e1733a59d6944fb9d271c94762d95013f98fb7dc"
+    },
+    {
+      "file": "assets/sprites/runtime/fall/frame_15.png",
+      "sha256": "726cfc22487b691355a4597c34ed32245c9db7a6fe4ab953d4ef77bd30ef9b3f"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_00.png",
+      "sha256": "7a7685ff33ac7afc0be82c6138673fd9f0cf2555886d3995b78f70f86b1a1975"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_01.png",
+      "sha256": "eb8a358c4c776f07872489ea9d798be85a8c884bcbc3ca1a0f6e72c8efaa1a6f"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_02.png",
+      "sha256": "68c8449b9c833b12268bfed4af8ca9b84c0a524a85e41225391459dd80a44ec5"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_03.png",
+      "sha256": "c70bb876edbb5bc55da23e658d991ab39b51e14f5a8b378b7ab68cc902960d1b"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_04.png",
+      "sha256": "3064d24bf779ac1bfe3147e77f1200ccf5b78357f30bd61d0f325220bb1d72de"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_05.png",
+      "sha256": "4ea4a2124b6a1a3ff788000a49529fead53e55a6d47b9445a4324fb577fabda1"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_06.png",
+      "sha256": "824cd1865613c2c0d32f92df90d9d3e4b2099a5b580fcf361673a5e865ab9f65"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_07.png",
+      "sha256": "973d671b619875b8a6be00829056ab208399d9c3c0464395892450044efdfb9d"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_08.png",
+      "sha256": "729c4961b26e5bd11c54e217032c65f552bb0a180b99a7afdd95623c32f08bc8"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_09.png",
+      "sha256": "33ed7474674ceef425ae91acb468ac571b9cc627b0168084cf95cc8050b8d8c0"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_10.png",
+      "sha256": "7878cbf5cd8d99fa8c1312ff893d6a1e30bf0d28a9fee24059fd1b21a3de43fa"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_11.png",
+      "sha256": "229fc773a14171370a0f8440cce942db815b88d4802d44a4cc4aecb9ca59d795"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_12.png",
+      "sha256": "bc1317bf8b9e14ac07419a648cf78e73d8257550582ed7352f9ac4d00d7552f3"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_13.png",
+      "sha256": "1d44c31614679362538c5bf7d2b73b2a733dd93078ceea5b30edb068f693f9e3"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_14.png",
+      "sha256": "4414b470b0ea6d0098bf929d619f9d3567a4204a9e7e09bd4b5bb98c1d79fdb5"
+    },
+    {
+      "file": "assets/sprites/runtime/hug/frame_15.png",
+      "sha256": "ba833fd5fb1d37a9a5b4354570a56100335d4854f9573918afc55dfb9cbca2e0"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_00.png",
+      "sha256": "b25b0fd10830d01c99b69750083ad57c4d11a0a2d0cb361f153d3c88a47eac91"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_01.png",
+      "sha256": "72c234add0eff675cc439d2c25091aa1525cffa356d8e657ed88d8f1af2fb35f"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_02.png",
+      "sha256": "a1987482f2641cb5482e0f4e1df402be13d9be8faeffc47175f1da4dfff00e6a"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_03.png",
+      "sha256": "e7b7eddd2de55dfb3cd3d4fd2ded35876848d513717a0c2a290b052fbc2711cb"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_04.png",
+      "sha256": "88626717b5e8b816eb69d68e983eef638d7ac0717c69344adc68b68548ee3164"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_05.png",
+      "sha256": "e1aa3cadb480ef86e4b55708633d031246eb0df386fd8d98a4d21b93b5f819cb"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_06.png",
+      "sha256": "a93005390477fbbbcfdf02d5b5c18329e30046876ffa6c77f5cebaad94fa9e6b"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_07.png",
+      "sha256": "868b7d78626f2247bab3b46306319b6cd68f32bdb587f47395e102745e0ff5ac"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_08.png",
+      "sha256": "94908b01ad36d4236b06dbe2952c4c9a2113aba9f7cee4bccb56a267f0d94c9e"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_09.png",
+      "sha256": "250c16f13dfc55da3b93289c3e97cd6cd94ed61ffec666fffa8f493bfc445d9d"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_10.png",
+      "sha256": "5908b71450ec30aab68747dbbe518501ebe59e3a206c52241779723413375a37"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_11.png",
+      "sha256": "a5022ddbd159d2fc9cdd00455b9f9e687f70ccf8a3ce9ab9ecdb61c9ff3224ac"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_12.png",
+      "sha256": "6177abf6857fcb31bfdd4d843300492a49cd5866569792b36eb3fe1488ebab12"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_13.png",
+      "sha256": "7dfe1fa26b5c23e8ed14581e585496df8dc24572e13655f47a0b2243e7b45d4b"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_14.png",
+      "sha256": "3bbc78053de6317b8ecacc118587185f21bf95890c2ffa5d8ae76191970f02a5"
+    },
+    {
+      "file": "assets/sprites/runtime/hungry/frame_15.png",
+      "sha256": "c9af6f067082adfefd8c756d852df87bdeaa7a351d0cf98cf3941b683631bd95"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_00.png",
+      "sha256": "9d635468df4fc570b66ca33eb8ea4c2c4a4906bc694042375cd41969f5e86d48"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_01.png",
+      "sha256": "55ccbed7f2efc92b595b722ae3715b10c5cd0a091043ca316d84cab77fd16a9e"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_02.png",
+      "sha256": "eb88bc64887ab5910c5a51d83297cf2844875bb5a61f0f877bcbe299a8d82550"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_03.png",
+      "sha256": "a3f7add511fd837f0aa3196ae0a9215a88896275b190dc4f95293c33237e566e"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_04.png",
+      "sha256": "ca12226ba7470de289c8578d181bc84f767fcd903eff66869fa733993c1c9e97"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_05.png",
+      "sha256": "2b1fee5e8efdfe3eea9fd59ed6711658fe7be3ab922bca183e9ac62cd6c8dd9c"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_06.png",
+      "sha256": "b803da37faf26b8027911ab88bafc01e5c939b281d3e2c1ff2b42eb8f6181619"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_07.png",
+      "sha256": "723892dd4ce5245b656ff7fe9eb2134dee6db84ed48617cf8ff65ee2e320e369"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_08.png",
+      "sha256": "5fb0f730e672bbc5a37555c15ce6c66ac6a3714a7d154a8934087c54172ebe9b"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_09.png",
+      "sha256": "0318caf6c7e99181d888ff17e73320fca847cf0cc4de02e4a76f582f5bfc6122"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_10.png",
+      "sha256": "cd870309aa72d82032d06cedf04cf639bb90ada77752ca5b22834edaf611f909"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_11.png",
+      "sha256": "f70787e49689090e6ff65013feecdc0113e243e95a79518bfc5eaac84da44747"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_12.png",
+      "sha256": "3f12b342b3aac30fb424ef0ccb151a7cc04e4475b417bcf3a3159ff8445ca051"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_13.png",
+      "sha256": "82f54260edfccd105d4623b087f06a9ed4bee0988faa24768696dbebeb5bd41b"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_14.png",
+      "sha256": "f0f10f97359f4ae4e84eb4d6815c757843bdccf48ebe761f96dea227bfe6ebb3"
+    },
+    {
+      "file": "assets/sprites/runtime/idle/frame_15.png",
+      "sha256": "29dfc08e5eb4ae8e434af5efadc0690a12c7fb6d5e10fb3099b94acfc6a7b7c5"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_00.png",
+      "sha256": "4411c1aac81b785960ce7bb37dd805cc53464a28cf6fe6d8742cbf14303cd9d4"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_01.png",
+      "sha256": "8a9574a87dee278798144e1d537df582059417c87b2858bca7f3110f5a928438"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_02.png",
+      "sha256": "0304571879b61963506298a8b4b01f72d578a38f81c877a619283dccc519b89d"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_03.png",
+      "sha256": "ebb22ec1322350afce701673f0d7a04d2d576ba4a177548ed38017ca76ebf637"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_04.png",
+      "sha256": "17099bd471b04733b367d8fcc36a05b5d59aec1e4fdeb5776282abfbd843efa6"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_05.png",
+      "sha256": "1ca80ea4927ec20f6827c9499a00008a70743f178464e008cca2623d1cfd79fc"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_06.png",
+      "sha256": "9ea5dfbc728dd197b8c352738f8f3d6f794405ddc8683a912383a28bba438e78"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_07.png",
+      "sha256": "f1a402fec97e23cd0a7b0ed3faed84baa82d5f459e4fceebd801b1a1e7a972aa"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_08.png",
+      "sha256": "baa5d19d105c8ded1f53338e68aebea66c0cb5fa6746ae18c7c9b87903e9bc35"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_09.png",
+      "sha256": "dad69624bd9c45639c8fda0ac8199da07ef8332bc384715fbc9f185f333ebbb8"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_10.png",
+      "sha256": "0a80c90fd203f5d2914fc7f1cb18c5ef525d08d80ac02591db7c9ddd0feff104"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_11.png",
+      "sha256": "de37a9f31c9ddc2acac2fa5d1e9f91abc638db9292f83e3b439c55c9052a070c"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_12.png",
+      "sha256": "02a16ae0160721176207d00bc339feda6fa8e45371724fea2353a9401103f364"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_13.png",
+      "sha256": "42644c2a410481fa7ae4d027495f32f5ec8c87ff5e9bb6fb8b0fa50e13da4f34"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_14.png",
+      "sha256": "2a46c87947e4458e4d9b53558a970ecd54addd94d072bc6e7b18222adb26e778"
+    },
+    {
+      "file": "assets/sprites/runtime/jump/frame_15.png",
+      "sha256": "89fe95d5fd8f3b5906c31ff7faa2c1eef2bcd9ed0e52210b45b0659904b5d4a5"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_00.png",
+      "sha256": "612130088fd98ac3167b382e8258c0fe3b037707a1d06d590c8b45680dc94c94"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_01.png",
+      "sha256": "8a8259a29a060acbcca1cc707bd03cc5ac68bfae83f0364093c4d3e44df43018"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_02.png",
+      "sha256": "b75859dd9cd88d63236f3fa43313b8e0de32b6abde40e11369a7fe364fc4fef2"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_03.png",
+      "sha256": "d306419a5c15f985d965fc9e417cecbe0380d546f2e4ec3d30445845ce243574"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_04.png",
+      "sha256": "09233f1cd3a400d9e4aac3314604a897162a11ea8877d3a5a34e1a169882a722"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_05.png",
+      "sha256": "3d19390911d254ef8eac064a1d0a5b5ea8931076d092d8c01cdb5415ab5fbd77"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_06.png",
+      "sha256": "93938b558cfb71206c8a41a2dbf55329f20c7f6d0d77d1e5d9e595a286135003"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_07.png",
+      "sha256": "d21b24069313b752bde42bc58892b54791e341568d8cd314f79107b3245eb92e"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_08.png",
+      "sha256": "e03b25f3dc6a6340e495782fcf7ce69409df8e909557040ce507774f7b37799a"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_09.png",
+      "sha256": "62c302e4ada5000604b174dbdc387886a45f74f3dbc8f1fa2494413f25a18656"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_10.png",
+      "sha256": "3e13ef92502db92fd13e568e1bb9e3cd0a74642ddba30e24c4b398a30b93461b"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_11.png",
+      "sha256": "e9a0abeb8f361e9e8dd4441969d4b691ec9557c463c1b1c3c91f4c5f29a1e4c3"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_12.png",
+      "sha256": "8a2c68a5051fbac25f941085a581754985099a51a83be1b17813018cb4523f47"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_13.png",
+      "sha256": "4503c2f701846772c4a5885b38301a5af4529a7ea1df7900f88b72566aedcb79"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_14.png",
+      "sha256": "885862d69dba53bdb6970f459ed2b79cf512b9ea84226c8762a30ffb7b8c5a52"
+    },
+    {
+      "file": "assets/sprites/runtime/land/frame_15.png",
+      "sha256": "fc6697751cc20ebf463ead4e62a9bbbdd7da64adb984fc094c36687072bb3cc8"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_00.png",
+      "sha256": "51a46ef871eea910d68115eced8d846a0431d33f760402d2f34ef7d98d7374e1"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_01.png",
+      "sha256": "b61e2a5ec588b2f44a85af7bb65b5e6b04b7d4dcd23273933ee79fa9bf7e9724"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_02.png",
+      "sha256": "2eabe819358d6d01b6425cd6c8f3ba8b029014cff00f4eb78b40a6d44c8ccfce"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_03.png",
+      "sha256": "00fa312136c67b980f1c00560117450d9046a676d43e1c8fc3cc2b878523aff0"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_04.png",
+      "sha256": "a521f5313ae71f247f7f753031aff0ae584c969ea798953d940d78b63b352118"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_05.png",
+      "sha256": "7e3b3510b6becca9928c524713d7cb471eca3b1bf9fd61e949a9a77e4747284c"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_06.png",
+      "sha256": "c2b04776ab62f80618fe208469a8fe5f8f1e5e3738cd571b1b375b0f8e350ce6"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_07.png",
+      "sha256": "88f32bcdd3ea390a370b28129f64ed98408591c931de8b05d28b310d5160977d"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_08.png",
+      "sha256": "c47d22c25a870f4b3ae9dd7e49a3be27533b15a447bd46162a5be71efeb4ce9b"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_09.png",
+      "sha256": "226bc31fc298d42a76f5eb5d2cdd75102391234bdb4fb5e2c2951ac69b6065d2"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_10.png",
+      "sha256": "f636ecc035d2a98687502345ddd772c8aa903559b86c19b4bfc7700736990d9c"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_11.png",
+      "sha256": "144e80c6a3ec52fe1f1377b4c8cee65c389a04c2c7af299fcda196e618ce2f00"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_12.png",
+      "sha256": "c61bc321dcd779e915410ee71a5c382b5fbdd8484197de0b1fb4a0f30b0bd3fa"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_13.png",
+      "sha256": "89a9c982eb0a9a24759a191580ce9b3cf4a04a4ae72493f4e0d5f0692b7bcf5e"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_14.png",
+      "sha256": "30825b4f137cb8b50c8ee085234d060e0ad1609c0489b674074aecafe796f075"
+    },
+    {
+      "file": "assets/sprites/runtime/lick/frame_15.png",
+      "sha256": "b1435bc2f36a62712ec9141389897e15b1a55133c8b7a8b014f49564b3e90688"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_00.png",
+      "sha256": "e6b9a755aeb7f3ad9521fe8a9a0bd6f19bcd08ec308ab3309bc541f704e6154b"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_01.png",
+      "sha256": "368bfac0a321eb62c4f2e9505c74f8dfd5af53b4d3935456d17fad7ad5389239"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_02.png",
+      "sha256": "5da73cddab0096b26094eb63880b798f37e5c800b9b33b7d500f7cbffd61bd4a"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_03.png",
+      "sha256": "fbe12482612cddc9bc02fff720a0702fd040d9237c7d034e72fd6a656cc00d90"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_04.png",
+      "sha256": "3dae3317b435391fb3d71a83845a06fc53a5bac436407cf33a057c905a6764ff"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_05.png",
+      "sha256": "8ea178b8d70b3596fd1f1b3b7a2ecc873d5d58d54297bc70faf2d28c18e54fc7"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_06.png",
+      "sha256": "0bd723ddcade2da221135e2a3c4c36695298bef5f4c7fdce0e359ae40ba4f63f"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_07.png",
+      "sha256": "fbb1f0b5ab5197091386ed87d0f75a45bd978c524149a7a7a741ad7118307021"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_08.png",
+      "sha256": "8aae77f003d39f9fdf913502615f515ef509810acd6b1fd6a44f82bbdac1e040"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_09.png",
+      "sha256": "db0522ac2769e957c7eae34974caca1cc063fbe2e17a0562b2628970f9b59e2c"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_10.png",
+      "sha256": "0d9f58b7907493968a4fcd91afc749fd6f64a75a7d7da47288ba1cc4126a2368"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_11.png",
+      "sha256": "253bb421d1477ba74433b5ad6e936c9984999f979b4a80e8f7a98f066080819f"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_12.png",
+      "sha256": "dd1264365b53ed692a0a5200e5924a26689a03c58d57eed531301ed9e76994c4"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_13.png",
+      "sha256": "6ee18c76c0482319b7a81454dc6df89ea37bcfcd70b48afdf9c893141d9a6a9e"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_14.png",
+      "sha256": "f4d7732c687bcd1e8fcd73b17d7c40f9ef6a4efcc006f220717184c66f715649"
+    },
+    {
+      "file": "assets/sprites/runtime/roll/frame_15.png",
+      "sha256": "2f6d3bee2859313c7edaaaeec541572d7f7debbda044b5b0868fbefade5d8512"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_00.png",
+      "sha256": "57abef954d67f8a09edafefe3ae0ad060a188df9d77cdb116bdfe197096192aa"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_01.png",
+      "sha256": "ee58c7db084531323dcaad4cbbf062e33c6235ad170538bd337786c209d07471"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_02.png",
+      "sha256": "7a00860d6e03237867c2bf78020207f8962d9edd1c5967d1006776afe3a46a73"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_03.png",
+      "sha256": "3876f30b4afec8f722f442061d1cae3a04438ffed91c411e5f4a60c053b07520"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_04.png",
+      "sha256": "18bd55593f9547332bf9f558254e6b945aed41cf3fd965eb2549d8a20436f74e"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_05.png",
+      "sha256": "0c7274e019cf6ed8e9b87563a2ee960f431599b9ad94543ddc75b3be8cf279ef"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_06.png",
+      "sha256": "3ed2122f1e5c57cb5959e5e071db5ad942adab1498cd5b3caefcb2cdca516af8"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_07.png",
+      "sha256": "62c66a3c74e72df600c5ada7cb5f66869794d2eca550ae08adf02ca38be415bf"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_08.png",
+      "sha256": "d1d4e39d06cf6a04bd4aa33a1f48263874ee75b334b7fce18d077d623c31e9f7"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_09.png",
+      "sha256": "eec551a81e7c63dafe2e5f58932b0909525752ce6ad691063cd335ab5a1725d1"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_10.png",
+      "sha256": "0d8b4d7515c8760493e3369d0f4c86396ab4fa9249df9462d4b3bf600aa8ce98"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_11.png",
+      "sha256": "3918bf7f1fa760e799da73e63066fe676e48e67f715d504755a0b323cda8ce7f"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_12.png",
+      "sha256": "0ad282021db5a5124edf9649822a2b59126a7d42472d1074edf05118ba732089"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_13.png",
+      "sha256": "cb7fe69588fcab01516b5970e1a27fbe78c08ddb8e9b2c0cd630b829d6ba8948"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_14.png",
+      "sha256": "4a44a977c460020a0f0036bd931db4b018034cecae3cd64acd5358a87fe1c9b9"
+    },
+    {
+      "file": "assets/sprites/runtime/run/frame_15.png",
+      "sha256": "a5a21844179078371b26725f6349bc7eb4da890ab357a92bb7d033f28baa4d02"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_00.png",
+      "sha256": "db53559a47b8c2a8f342e7f6de3f7b61baf565bff9591ee59903e28fdc797fc3"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_01.png",
+      "sha256": "5290da93dace1e863d884a0dbe34bd4852f724855d6c0b3eeda937d09b43a26e"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_02.png",
+      "sha256": "b28de73ae6cbbeb28747e55248eec03487dbc19f10b30dc5781dddbf57e10df3"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_03.png",
+      "sha256": "5bdfac9666279bc2402fa7479490fe81cbf983facb7cffecafd04916a17979c3"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_04.png",
+      "sha256": "7aec2015969b1997f41e2b13f8ee26bbab558aa61267bef63030ad1c3056c411"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_05.png",
+      "sha256": "71cb9ab98cab4514b29a40f6a251b58821043b87add9d82eb4fc42add0e246e8"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_06.png",
+      "sha256": "77c86967fc3f51272dd999a8235b68cc8d45dee5f5aafb136756189d5cc5db15"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_07.png",
+      "sha256": "192bb22e5149fe200b5d6d2d5c0ab08e3d22ba9cafaf5dc0309bb8bd605ea457"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_08.png",
+      "sha256": "dc078f63488a54f884cddbf43f95d1f95f194d942ba1e00a04e465e0fa14c027"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_09.png",
+      "sha256": "fd788c8f29bb869029aee6198db3f1ad52e059886448ab09e01bd3ff0a95808b"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_10.png",
+      "sha256": "c6dd742f8bfe26ac924c1d816546e5a7ec5ee86e130668054dc00092fc3c04d4"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_11.png",
+      "sha256": "1eeafea4bbd2c1e7f4a6865241825ebf9d1b35eda17910362c3f65d1ec635d3e"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_12.png",
+      "sha256": "359c49386e8720e50c09ccd420b14273e1b4e634438dd41cf5637008bc7810a6"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_13.png",
+      "sha256": "6efd5299d5ef5db7cc4b3fa76e2e5af4ccc08c4d0dc2d0d30d6c0974e189d3b0"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_14.png",
+      "sha256": "3597ba61350dc6474113dece438d60c957e2d5c4fa4873cb6c5f643d19726ea9"
+    },
+    {
+      "file": "assets/sprites/runtime/satisfied/frame_15.png",
+      "sha256": "167529f676a53826fb2140c42d6f4f06f79a6cf79a505af66cab3fb1126dee71"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_00.png",
+      "sha256": "95aa5f3bdbef4fb701baedb62b7242031043e0f922d985a8d030e4749b1af1d0"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_01.png",
+      "sha256": "ff513e76c5508aa2bcd48398eb5c5b9e9b6635c50ba8d5c7798da75dc44e25c2"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_02.png",
+      "sha256": "880b201425bd741bf07157287622b1a5b232cf22ee77b1a9b6f0cc15ff9bcae5"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_03.png",
+      "sha256": "fec4216d9ef408bf96a697b22cfef4bfcd67c23ee5239bcec43c5fced9633063"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_04.png",
+      "sha256": "6234737a713750b14b85d1bbbe8ab26f2deb9090f8098760295811bf4aef40e3"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_05.png",
+      "sha256": "f85b04b739440aaba0da583c94c8286f00052d3eef55523725369f9c44db067c"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_06.png",
+      "sha256": "2e4a9602d2f0e5b96a29d42ee064b1c41119165343acb7b2a9daa6d3d4764650"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_07.png",
+      "sha256": "a21a98d830d3116e55d4dae1f2e2f710eb165e21b5de0c9cd4a6bec36545818f"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_08.png",
+      "sha256": "05f66cbf1f8bd17a4f683613463660be82bfba4d9805ab9e0b34ac5c04a47882"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_09.png",
+      "sha256": "4d45e6170a4976666ba960bb2f107471e0d4954d9fdb57bb66c881623d5dc67d"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_10.png",
+      "sha256": "854c16bc91289f85a04a67b7b9030bf1159233c6a07b4816416e540b767371d1"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_11.png",
+      "sha256": "f249c3750058bac612c7452f8100ede2d099a7ee90d276bcc03119801cab26f0"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_12.png",
+      "sha256": "5ef9a29c65e4d51088f44c6cc69ddd6e646241b2ac2f971d3b2fbc7cc8dd2277"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_13.png",
+      "sha256": "e3fca79395383ffac825db896a7fc15009a9d566a984fcec4a09f696e64a2b97"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_14.png",
+      "sha256": "da3c3d3319f85c2601b6440b1e36738fd6be3f7532b297642aa39c2a55411d9a"
+    },
+    {
+      "file": "assets/sprites/runtime/sleep/frame_15.png",
+      "sha256": "38570265b90643dc90f74d275a2190ab5bbaa855acc80b899c7924815fda8c5b"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_00.png",
+      "sha256": "1591eaca46b29ee8656d2f4d5d425c0b87a052306472dbb66f74d6b6ca76ac52"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_01.png",
+      "sha256": "546d0b49cd67e55899e046d5050790b22749075a5199a60e6047e3ef18be4383"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_02.png",
+      "sha256": "b64df05f1a3973fcda89b2ae82caa01bb7d155d4079f67dff503eedf6b0f46e5"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_03.png",
+      "sha256": "46dc750edb223f7584f05ba3a05b15e056db654d3e50cc4250305cf05063c366"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_04.png",
+      "sha256": "5da276054febc10d93c01bd60800ab534add0901362d2bd8056aa00264d59336"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_05.png",
+      "sha256": "bd26a4eda5fddc6139eab6d81743efb80d0bc38144cdb93f646fc5fe68eb23cd"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_06.png",
+      "sha256": "9af0e15c2e7d7bae09562a3c6b05df6cbfc8dc76b947e0aa94b49f53b0ab9c0c"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_07.png",
+      "sha256": "ab3a0471ecb99a67d6a36d4f4800530e7f9ee52e0ae54bbecdfb66db43c070b8"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_08.png",
+      "sha256": "888e1a402eb7e2a45f4aca4be4daffdc41389de2343ad736f45729e239e1cffc"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_09.png",
+      "sha256": "cbb3fbda861882449111e202b50bbd897bb2aa236f6a44c624a4d36e50d7e612"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_10.png",
+      "sha256": "6d015798f707095d625940a6ae0148ea5ee882cfd1b6f3683e73a4b7727d2106"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_11.png",
+      "sha256": "7a33bb8321dfa098354c214d5ca38f28c51acbbaf686642e57768e02f96a3790"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_12.png",
+      "sha256": "dcd716abee30a23368f9c16c622165c6c6cf6a60a15c800f48b98a9320478227"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_13.png",
+      "sha256": "a7ba031d6074fa0e6a7f9145431a3748caa2b6d108452b662ee2f796dcf356f8"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_14.png",
+      "sha256": "798a887d341a46f8b2aa4c7fa6457aa142714c9c83f6a137ca9be20213b3e451"
+    },
+    {
+      "file": "assets/sprites/runtime/slide/frame_15.png",
+      "sha256": "a115b66d3c0d8a6fea8dfd682c7ec14f1b80de5f81fbd700bfd07c7b9ac8cf69"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_00.png",
+      "sha256": "3bbd86fe0eea7e21c74af6ae739c542ea412d737f4bad5fd21a69c9a28b2fe3b"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_01.png",
+      "sha256": "afe82d7099f24886bcaf66278dd9fb40268da0e62316ff08f14b528ac928d49e"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_02.png",
+      "sha256": "c4b30b0e0df26ba53841778fa722b9581bed8817183931cc888a156f13817dca"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_03.png",
+      "sha256": "3d36ef93d59d45f329d80c968d0ec96f492396de72af3bcc04713e341e66ae66"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_04.png",
+      "sha256": "8b0d3cbf098c1f0026ad4b4a4fe9a773f9785a1488d2de7a9c80f0bded55aa98"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_05.png",
+      "sha256": "05fffca657dbbdab586c9fc4fad33bc2e2d0d699f90c47a76bb2be6dbe2ccd5b"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_06.png",
+      "sha256": "d47b203cc0a32eed81ea07cce6f7288daa10b3d30f1f2bb9222dfc1bf84cf610"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_07.png",
+      "sha256": "3f3911fe8455c8b6a8138a45e6de0a431fc58b77774939575c93dec9ecb6c09c"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_08.png",
+      "sha256": "c0e5c458c0e1703385210ca90125436b07c424d14de4819764432f8bc05045fb"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_09.png",
+      "sha256": "1a7751cd760421aa1af6b23dcf184a2fabac1f1cbbfe7491c006f186314c5f35"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_10.png",
+      "sha256": "7e97506f05e371becae81f67b38b658a1fe294548b635aa6f6158042b4a2abc1"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_11.png",
+      "sha256": "48836f00774537c632cbe92163e533a9b44364625df89f046c4aa007139f3305"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_12.png",
+      "sha256": "0d3c8b157d6fa438e600424fe754832a1c2b3ea9925d1d8de2637ea24b04c4e5"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_13.png",
+      "sha256": "ebb99ed8670ac42cc7c15509b06c7f6951657e647ec7852410bddaa6a9396756"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_14.png",
+      "sha256": "1bd424a89d92d08bc35777d99628063767febc9ac55125c1554caee86f240a3f"
+    },
+    {
+      "file": "assets/sprites/runtime/toss/frame_15.png",
+      "sha256": "a968ecfe0e1b26cae1de6c9693bf976cf7d75ca986de434ae0fc31359cfd5853"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_00.png",
+      "sha256": "3d1d5f944f40c17be7475a50bfe880d8ebf5e50ae95eeb423ca12b956bff5cfc"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_01.png",
+      "sha256": "7acc8d61dcbbab900c28c667a78cc79eda74119fe488775603bdc4a9d15d0aea"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_02.png",
+      "sha256": "430775d5b86879a6ffaa97e741e980512e6c21eb99e20fa2a48a9a54eea74b07"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_03.png",
+      "sha256": "9f6c155b3f76de4a24e2d253aff739e9adda67ee079380bf660a682dfed243df"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_04.png",
+      "sha256": "c7f45c741c896826d938ee84ee68f7261115cb724fc7ba1e06604cdf537fe660"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_05.png",
+      "sha256": "ffff46438c9c41063cee08e48743b4846d442c399227e066458b4e776c0b9436"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_06.png",
+      "sha256": "ca8f02a6229b482b03f92427289ce5d64f5a2b11ca11fc9789f640e31013c09b"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_07.png",
+      "sha256": "9f664f5f4600d483e6e1e6b7f54c6529090ad543e7ac4a6907617ecb9c05c7fe"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_08.png",
+      "sha256": "cdeda1d587b71081676e2983966310ba4762482767c113dfde7dd01587a5647e"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_09.png",
+      "sha256": "a6dacc931b24217c1b440e6365943a5df022ea0ee875a9324ea222f010f37d9b"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_10.png",
+      "sha256": "a59818caa24d9e69bff10282b7cbb66b8a3881250d2a160f5f4463325f0207d2"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_11.png",
+      "sha256": "1b238f0b569bbfa869df669af3c8bff60c4b81dab897c0f72f7c73b64b426ded"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_12.png",
+      "sha256": "14ba334d603efc7f5cfad44fd3b33e04fcd764b17170f51b7230debddcf90eb7"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_13.png",
+      "sha256": "1286ec15ada8fa6513072b5c1c776f264f040e9c628eb2ebdebf832cb0c022f6"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_14.png",
+      "sha256": "212eb02b78db99ac15a703189495183f17a3472a05b503ac54f436c3f1ce828f"
+    },
+    {
+      "file": "assets/sprites/runtime/walk/frame_15.png",
+      "sha256": "13e8f85dc4b3dc4b6bbe8161c5a12822b6a590bfea7aa9f4fe9f71037bf549cc"
+    }
+  ],
+  "python_implementation": "Behavioral reimplementation based on decompiled SoftMochiPet sources; Qt GUI and Win32 adapters. Not byte-identical behavior to WPF."
+}

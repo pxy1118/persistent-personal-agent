@@ -22,7 +22,7 @@ const server = mock ? createServer(async (req,res) => {
   else {emit({role:'assistant',reasoning_content:'PRIVATE_REASONING'});for(const content of ['你好，','我是糯糯。','这是 PPA 自己的终端。']){emit({content});await new Promise(r=>setTimeout(r,120));}emit({},'stop');}
   res.end('data: [DONE]\n\n');
 }) : undefined;
-if(server){await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));c={modelBaseUrl:`http://127.0.0.1:${(server.address() as {port:number}).port}/v1`,modelId:'ppa-tui-fixture',contextWindow:32768,maxTokens:4096};}
+if(server){await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));c={modelBaseUrl:`http://127.0.0.1:${(server.address() as {port:number}).port}/v1`,modelId:'ppa-tui-fixture',contextWindow:32768,maxTokens:4096,provider:'openai-compatible'};}
 let session: PpaSession | undefined;
 try {
   const ids = await modelIds(c);
