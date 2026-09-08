@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "skill": {
+      "type": "string",
+      "description": "The skill name. E.g., \"commit\", \"review-pr\", or \"pdf\""
+    }
+  },
+  "required": ["skill"],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

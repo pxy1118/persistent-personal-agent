@@ -1,0 +1,341 @@
+#!/usr/bin/env bun
+
+/**
+ * Build script for Letta Code CLI
+ * Bundles TypeScript source into a single JavaScript file
+ */
+
+import {
+  cpSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const runtimeRequire = createRequire(import.meta.url);
+const pinnedRuntimeUiPlugin = {
+  name: "ppa-runtime-pinned-ui",
+  setup(build) {
+    build.onResolve(
+      { filter: /^(?:react|react-dom)(?:\/.*)?$/ },
+      (args) => ({ path: runtimeRequire.resolve(args.path) }),
+    );
+    build.onResolve({ filter: /^ink(?:\/.*)?$/ }, (args) => ({
+      path: runtimeRequire.resolve(args.path),
+    }));
+  },
+};
+
+function walkFiles(root) {
+  const entries = readdirSync(root);
+  const files = [];
+  for (const entry of entries) {
+    const path = join(root, entry);
+    const stat = statSync(path);
+    if (stat.isDirectory()) {
+      files.push(...walkFiles(path));
+      continue;
+    }
+    files.push(path);
+  }
+  return files;
+}
+
+function toDeclarationSpecifier(fromFile, targetRoot, aliasPath) {
+  const targetPath = join(targetRoot, aliasPath);
+  const relativePath = relative(dirname(fromFile), targetPath).replaceAll(
+    "\\",
+    "/",
+  );
+  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+}
+
+function rewriteDeclarationAliases(typesRoot) {
+  for (const file of walkFiles(typesRoot)) {
+    if (!file.endsWith(".d.ts")) {
+      continue;
+    }
+    const source = readFileSync(file, "utf-8");
+    const rewritten = source.replace(
+      /(["'])@\/([^"']+)\1/g,
+      (_match, quote, aliasPath) =>
+        `${quote}${toDeclarationSpecifier(file, typesRoot, aliasPath)}${quote}`,
+    );
+    if (rewritten !== source) {
+      writeFileSync(file, rewritten);
+    }
+  }
+}
+
+// Read version from package.json
+const pkg = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf-8"));
+const version = pkg.version;
+const useMagick = Bun.env.USE_MAGICK;
+const features = [];
+
+console.log(`📦 Building PPA Runtime v${version}...`);
+if (useMagick) {
+  console.log(`🪄 Using magick variant of imageResize...`);
+  features.push("USE_MAGICK");
+}
+
+await Bun.build({
+  entrypoints: ["./src/standalone-entry.ts"],
+  outdir: ".",
+  target: "node",
+  format: "esm",
+  plugins: [pinnedRuntimeUiPlugin],
+  minify: false, // Keep readable for debugging
+  sourcemap: "external",
+  naming: {
+    entry: "ppa-runtime.js",
+  },
+  define: {
+    LETTA_VERSION: JSON.stringify(version),
+    BUILD_TIME: JSON.stringify(new Date().toISOString()),
+    __USE_MAGICK__: useMagick ? "true" : "false",
+  },
+  // Load text files as strings (for markdown, etc.)
+  loader: {
+    ".md": "text",
+    ".mdx": "text",
+    ".txt": "text",
+  },
+  // Keep most native Node.js modules external to avoid bundling issues.
+  // grammY must stay external too: bundling its node-fetch/abort-controller
+  // stack into letta.js breaks Telegram startup because node-fetch rejects the
+  // bundled AbortSignal class during bot.init().
+  // But don't make `sharp` external, causes issues with global Bun-based installs
+  // ref: #745, #1200
+  external: ["ws", "@vscode/ripgrep", "node-pty", "grammy"],
+  features: features,
+});
+
+await Bun.build({
+  entrypoints: ["./src/utils/image-resize-worker.ts"],
+  outdir: ".",
+  target: "node",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "image-resize-worker.js",
+  },
+  // The Electron-safe build loads a patched native addon and its adjacent
+  // libvips shared library. Keep its package boundary intact so those files
+  // resolve from node_modules at runtime.
+  external: ["@janhapke/sharp-electron"],
+});
+
+// Add shebang to output file
+const outputPath = join(__dirname, "ppa-runtime.js");
+let content = readFileSync(outputPath, "utf-8");
+
+// Remove any existing shebang first
+if (content.startsWith("#!")) {
+  content = content.slice(content.indexOf("\n") + 1);
+}
+
+// Patch secrets requirement back in for node build
+content = content.replace(
+  `(()=>{throw new Error("Cannot require module "+"bun");})().secrets`,
+  `globalThis.Bun.secrets`,
+);
+
+const withShebang = `#!/usr/bin/env node
+${content}`;
+await Bun.write(outputPath, withShebang);
+
+// Make executable
+if (process.platform !== "win32") {
+  await Bun.$`chmod +x ppa-runtime.js`;
+}
+
+await Bun.build({
+  entrypoints: ["./src/app-server-client.ts"],
+  outdir: "./dist",
+  target: "browser",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "app-server-client.js",
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/mcp-client.ts"],
+  outdir: "./dist",
+  target: "node",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "mcp-client.js",
+  },
+  define: {
+    LETTA_VERSION: JSON.stringify(version),
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/memory-confinement.ts"],
+  outdir: "./dist",
+  target: "node",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "memory-confinement.js",
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/memory-constraints.ts"],
+  outdir: "./dist",
+  target: "node",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "memory-constraints.js",
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/app-server-client.ts"],
+  outdir: "./dist",
+  target: "node",
+  format: "cjs",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "app-server-client.cjs",
+  },
+});
+
+// Browser-safe agent creation presets (personalities, prompts, tags) for
+// surfaces that create Letta Code agents through Core (e.g. the chat web app).
+for (const output of readdirSync(join(__dirname, "dist"))) {
+  if (/^agent-presets-.+\.js(?:\.map)?$/.test(output)) {
+    rmSync(join(__dirname, "dist", output));
+  }
+}
+await Bun.build({
+  entrypoints: ["./src/agent-presets.ts"],
+  outdir: "./dist",
+  target: "browser",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  splitting: true,
+  naming: {
+    entry: "agent-presets.js",
+    chunk: "agent-presets-[name].js",
+  },
+  define: {
+    __AGENT_PRESETS_BUNDLE__: "true",
+  },
+  loader: {
+    ".md": "text",
+    ".mdx": "text",
+    ".txt": "text",
+  },
+});
+
+// Pure scheduled-turn envelope contract shared by scheduler producers and
+// transcript consumers.
+await Bun.build({
+  entrypoints: ["./src/schedules.ts"],
+  outdir: "./dist",
+  target: "browser",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "schedules.js",
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/channels-public.ts"],
+  outdir: "./dist",
+  target: "browser",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "channels-public.js",
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/gateway-core.ts"],
+  outdir: "./dist",
+  target: "browser",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "gateway-core.js",
+  },
+  loader: {
+    ".md": "text",
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/channels-slack.ts"],
+  outdir: "./dist",
+  target: "browser",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "channels-slack.js",
+  },
+});
+
+await Bun.build({
+  entrypoints: ["./src/channels-telegram.ts"],
+  outdir: "./dist",
+  target: "browser",
+  format: "esm",
+  minify: false,
+  sourcemap: "external",
+  naming: {
+    entry: "channels-telegram.js",
+  },
+});
+
+// Copy bundled skills to skills/ directory for shipping
+const bundledSkillsSrc = join(__dirname, "src/skills/builtin");
+const bundledSkillsDst = join(__dirname, "skills");
+
+if (existsSync(bundledSkillsSrc)) {
+  // Clean and copy
+  if (existsSync(bundledSkillsDst)) {
+    rmSync(bundledSkillsDst, { recursive: true });
+  }
+  cpSync(bundledSkillsSrc, bundledSkillsDst, { recursive: true });
+  console.log("📂 Copied bundled skills to skills/");
+}
+
+// Generate type declarations for wire types export
+console.log("📝 Generating type declarations...");
+await Bun.$`bunx tsc -p tsconfig.types.json`;
+rewriteDeclarationAliases(join(__dirname, "dist/types"));
+console.log("   Output: dist/types/protocol.d.ts");
+
+console.log("✅ Build complete!");
+console.log(`   Output: ppa-runtime.js`);
+console.log("   Output: dist/app-server-client.js and .cjs");
+console.log(`   Size: ${(Bun.file(outputPath).size / 1024).toFixed(0)}KB`);

@@ -1,0 +1,312 @@
+/**
+ * Letta Code Color System
+ *
+ * This file defines all colors used in the application.
+ * No colors should be hardcoded in components - all should reference this file.
+ */
+
+import {
+  getTerminalBackgroundColor,
+  getTerminalTheme,
+  type TerminalRgb,
+} from "@/cli/helpers/terminal-theme";
+
+/**
+ * Parse a hex color (#RRGGBB) to RGB components.
+ */
+function parseHex(hex: string): { r: number; g: number; b: number } {
+  const h = hex.replace("#", "");
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex({ r, g, b }: TerminalRgb): string {
+  const toHex = (value: number) => value.toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function isLightRgb({ r, g, b }: TerminalRgb): boolean {
+  return 0.299 * r + 0.587 * g + 0.114 * b > 128;
+}
+
+function blendRgb(
+  fg: TerminalRgb,
+  bg: TerminalRgb,
+  alpha: number,
+): TerminalRgb {
+  return {
+    r: Math.floor(fg.r * alpha + bg.r * (1 - alpha)),
+    g: Math.floor(fg.g * alpha + bg.g * (1 - alpha)),
+    b: Math.floor(fg.b * alpha + bg.b * (1 - alpha)),
+  };
+}
+
+function getCodexUserMessageBackground(): string {
+  const theme = getTerminalTheme();
+  const terminalBg =
+    getTerminalBackgroundColor() ??
+    (theme === "light" ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 });
+  const overlay = isLightRgb(terminalBg)
+    ? { color: { r: 0, g: 0, b: 0 }, alpha: 0.04 }
+    : { color: { r: 255, g: 255, b: 255 }, alpha: 0.12 };
+
+  return rgbToHex(blendRgb(overlay.color, terminalBg, overlay.alpha));
+}
+
+/**
+ * Convert a hex color (#RRGGBB) to an ANSI 24-bit background escape sequence.
+ */
+export function hexToBgAnsi(hex: string): string {
+  const { r, g, b } = parseHex(hex);
+  return `\x1b[48;2;${r};${g};${b}m`;
+}
+
+/**
+ * Convert a hex color (#RRGGBB) to an ANSI 24-bit foreground escape sequence.
+ */
+export function hexToFgAnsi(hex: string): string {
+  const { r, g, b } = parseHex(hex);
+  return `\x1b[38;2;${r};${g};${b}m`;
+}
+
+// Brand colors (dark mode)
+export const brandColors = {
+  orange: "#FF5533", // dark orange
+  blue: "#0707AC", // dark blue
+  // text colors
+  primaryAccent: "#8C8CF9", // lighter blue
+  primaryAccentLight: "#BEBEEE", // even lighter blue
+  textMain: "#DEE1E4", // white
+  textSecondary: "#A5A8AB", // light grey
+  textDisabled: "#46484A", // dark grey
+  // status colors
+  statusSuccess: "#64CF64", // green
+  statusWarning: "#FEE19C", // yellow
+  statusError: "#F1689F", // red
+} as const;
+
+// Brand colors (light mode)
+export const brandColorsLight = {
+  orange: "#FF5533", // dark orange
+  blue: "#0707AC", // dark blue
+  // text colors
+  primaryAccent: "#3939BD", // lighter blue
+  primaryAccentLight: "#A9A9DE", // even lighter blue
+  textMain: "#202020", // white
+  textSecondary: "#797B7D", // light grey
+  textDisabled: "#A5A8AB", // dark grey
+  // status colors
+  statusSuccess: "#28A428", // green
+  statusWarning: "#B98813", // yellow
+  statusError: "#BA024C", // red
+} as const;
+
+// Semantic color system
+const _colors = {
+  // Welcome screen
+  welcome: {
+    border: brandColors.primaryAccent,
+    accent: brandColors.primaryAccent,
+  },
+
+  // Selector boxes (model, agent, generic select)
+  selector: {
+    border: brandColors.primaryAccentLight,
+    title: brandColors.primaryAccentLight,
+    itemHighlighted: brandColors.primaryAccent,
+    itemCurrent: brandColors.statusSuccess, // for "(current)" label
+  },
+
+  // Command autocomplete and command messages
+  command: {
+    selected: brandColors.primaryAccent,
+    inactive: brandColors.textDisabled, // uses dimColor prop
+    border: brandColors.textDisabled,
+    running: brandColors.textSecondary,
+    error: brandColors.statusError,
+  },
+
+  // Approval/HITL screens
+  approval: {
+    border: brandColors.primaryAccentLight,
+    header: brandColors.primaryAccent,
+  },
+
+  // Code and markdown elements (use terminal theme colors)
+  code: {
+    inline: "green",
+  },
+
+  link: {
+    text: brandColors.primaryAccentLight,
+    url: brandColors.primaryAccent,
+  },
+
+  heading: {
+    primary: "cyan",
+    secondary: brandColors.primaryAccent,
+  },
+
+  // Status indicators
+  status: {
+    error: brandColors.statusError,
+    success: brandColors.statusSuccess,
+    interrupt: brandColors.statusError,
+    processing: brandColors.primaryAccent, // base text color
+    processingShimmer: brandColors.primaryAccentLight, // shimmer highlight
+  },
+
+  // Tool calls
+  tool: {
+    pending: brandColors.textSecondary, // blinking dot (ready/waiting for approval)
+    completed: brandColors.statusSuccess, // solid green dot (finished successfully)
+    streaming: brandColors.textSecondary, // solid gray dot (streaming/in progress)
+    running: brandColors.textSecondary, // blinking gray dot (executing)
+    error: brandColors.statusError, // solid red dot (failed)
+    memoryName: brandColors.primaryAccent, // memory tool name highlight (matches thinking spinner)
+  },
+
+  // Input box
+  input: {
+    border: brandColors.textDisabled,
+    prompt: brandColors.textMain,
+  },
+
+  // Bash mode
+  bash: {
+    prompt: brandColors.statusError, // Red ! prompt
+    border: brandColors.statusError, // Red horizontal bars
+    dot: brandColors.statusError, // Red dot in output
+  },
+
+  // Shell command syntax highlighting
+  shellSyntaxDark: {
+    prompt: "#cba6f7",
+    text: "#cdd6f4",
+    comment: "#6c7086",
+    keyword: "#89b4fa",
+    string: "#a6e3a1",
+    number: "#fab387",
+    literal: "#fab387",
+    builtIn: "#f9e2af",
+    variable: "#f5c2e7",
+    title: "#94e2d5",
+    attr: "#74c7ec",
+    operator: "#bac2de",
+    punctuation: "#bac2de",
+    meta: "#f38ba8",
+    substitution: "#f5c2e7",
+  },
+  shellSyntaxLight: {
+    prompt: "#8839ef",
+    text: "#4c4f69",
+    comment: "#9ca0b0",
+    keyword: "#1e66f5",
+    string: "#40a02b",
+    number: "#fe640b",
+    literal: "#fe640b",
+    builtIn: "#df8e1d",
+    variable: "#ea76cb",
+    title: "#179299",
+    attr: "#209fb5",
+    operator: "#5c5f77",
+    punctuation: "#5c5f77",
+    meta: "#d20f39",
+    substitution: "#e64553",
+  },
+
+  // Todo list
+  todo: {
+    completed: brandColors.primaryAccent, // Same blue as in-progress, with strikethrough
+    inProgress: brandColors.primaryAccent,
+  },
+
+  // Subagent display
+  subagent: {
+    header: brandColors.primaryAccent,
+    running: brandColors.statusWarning,
+    completed: brandColors.statusSuccess,
+    error: brandColors.statusError,
+    treeChar: brandColors.textSecondary,
+    hint: "#808080", // Grey to match Ink's dimColor
+  },
+
+  // Background subagent
+  bgSubagent: {
+    label: "#87af87",
+    spinner: "#5faf5f",
+  },
+
+  // Info/modal views
+  info: {
+    border: brandColors.primaryAccent,
+    prompt: brandColors.primaryAccent,
+  },
+
+  // Diff rendering (line bg palette matches Codex CLI dark theme, see
+  // ~/dev/codex/codex-rs/tui/src/diff_render.rs lines 60-61)
+  diff: {
+    addedLineBg: "#213A2B",
+    removedLineBg: "#4A221D",
+    contextLineBg: undefined,
+    // Word-level highlight colors (used by MemoryDiffRenderer)
+    addedWordBg: "#2d7a2d",
+    removedWordBg: "#7a2d2d",
+    textOnDark: "white",
+    textOnHighlight: "white",
+    symbolAdd: "green",
+    symbolRemove: "red",
+    symbolContext: undefined,
+  },
+
+  // Error display
+  error: {
+    border: "red",
+    text: "red",
+  },
+
+  // Generic text colors (used with dimColor prop or general text)
+  text: {
+    normal: "white",
+    dim: "gray",
+    bold: "white",
+  },
+
+  // Footer bar
+  footer: {
+    agentName: brandColors.primaryAccent,
+  },
+
+  // Context window breakdown categories
+  contextBreakdown: {
+    system: "#E07050", // coral-red
+    coreMemory: "#E0A040", // amber
+    tools: "#20B2AA", // turquoise
+    messages: "#8C8CF9", // brand purple
+    summaryMemory: "#D0B060", // gold
+    other: "#A0A0A0", // light grey
+  },
+} as const;
+
+// Combine static colors with theme-aware dynamic properties
+export const colors = {
+  ..._colors,
+
+  get shellSyntax() {
+    return getTerminalTheme() === "light"
+      ? _colors.shellSyntaxLight
+      : _colors.shellSyntaxDark;
+  },
+
+  // User messages (past prompts) - theme-aware background
+  // Uses getter to read theme at render time (after async init)
+  get userMessage() {
+    return {
+      background: getCodexUserMessageBackground(),
+      text: undefined, // use default terminal text color
+    };
+  },
+};

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
-import { root } from './letta-runtime.js';
+import { root } from './ppa-runtime.js';
 
 const execFileAsync = promisify(execFile);
 export type ScreenDisplay = 'primary' | 'all';

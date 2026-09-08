@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PpaSession } from '../src/ppa-session.js';
 import { PpaTerminal } from '../src/ppa-terminal.js';
-import { locations, root, readConfig, cliAsync, atomicJson, configureAgent, modelIds } from '../src/letta-runtime.js';
+import { locations, root, readConfig, cliAsync, atomicJson, configureAgent, modelIds } from '../src/ppa-runtime.js';
 import { acquireLock } from '../src/lock.js';
 import { createServer } from 'node:http';
 

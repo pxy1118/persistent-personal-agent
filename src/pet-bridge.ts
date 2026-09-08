@@ -4,7 +4,7 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PpaSession, type MemoryDocument } from './ppa-session.js';
 import { acquireLock } from './lock.js';
-import { locations, readConfig, redact, type LettaConfig } from './letta-runtime.js';
+import { locations, readConfig, redact, type LettaConfig } from './ppa-runtime.js';
 import { readProfiles, selectProfile, writeActiveConfig } from './model-profiles.js';
 import { permissionModes, type PermissionMode } from './permission-modes.js';
 
@@ -80,11 +80,6 @@ export class PetBridge {
           if (typeof p.text !== 'string' || p.text.length > 100000 || (!p.text.trim() && !p.image)) throw new Error('请输入内容。');
           if (p.image !== undefined && typeof p.image !== 'string') throw new Error('无效图片路径。');
           const images = p.image ? [await petImage(p.image)] : [];
-          // In 0.31.12 turn_finished precedes asynchronous runtime cleanup. A later
-          // turn can inherit a detached approval resolver. Reattach persisted state
-          // before a new input, retaining the user's permission mode; never replay.
-          this.emit('connecting', null);
-          await s.restart();
           if (epoch !== this.cancellation) throw new Error('已停止，输入未发送，也不会自动重发。');
           await s.send(p.text || '请看看这张图片。', images); return this.status();
         }

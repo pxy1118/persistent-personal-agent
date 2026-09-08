@@ -1,0 +1,140 @@
+import { runAgentsSubcommand } from "./agents";
+import { runBackendSubcommand } from "./backend";
+import { runChannelsSubcommand } from "./channels";
+import { runConnectSubcommand } from "./connect";
+import { runCronSubcommand } from "./cron";
+import { runEnvironmentsSubcommand } from "./environments";
+import { runFeedbackSubcommand } from "./feedback";
+import { runListenSubcommand } from "./listen.tsx";
+import { runLocalBackendSubcommand } from "./local-backend";
+import { runMcpSubcommand } from "./mcp";
+import { runMemorySubcommand } from "./memory";
+import { runMessagesSubcommand } from "./messages";
+import { runModsSubcommand } from "./mods";
+import { runSandboxSubcommand } from "./sandbox";
+import { runSecretSubcommand } from "./secret";
+import { asLegacyAppServerCommand, runServerSubcommand } from "./server";
+import { runSetupSubcommand } from "./setup";
+import { runSharedMemorySubcommand } from "./shared-memory";
+import { runInstallSubcommand, runSkillsSubcommand } from "./skills";
+import { runTeleportSubcommand } from "./teleport";
+import { runTrajectoriesSubcommand } from "./trajectories";
+
+async function runUpdateSubcommand(): Promise<number> {
+  const { manualUpdate } = await import("@/updater/auto-update");
+  const result = await manualUpdate();
+  console.log(result.message);
+  return result.success ? 0 : 1;
+}
+
+async function runVersionSubcommand(): Promise<number> {
+  const { getVersion } = await import("@/version");
+  console.log(`${getVersion()} (PPA Runtime)`);
+  return 0;
+}
+
+export function subcommandNeedsEarlyBackendMode(
+  command: string | undefined,
+): boolean {
+  switch (command) {
+    case "app-server":
+    case "channel-gateway":
+    case "agents":
+    case "connect":
+    case "computers":
+    case "environments":
+    case "envs":
+    case "feedback":
+    case "install":
+    case "memfs":
+    case "memory":
+    case "messages":
+    case "mcp":
+    case "mods":
+    case "remote":
+    case "sandbox":
+    case "secret":
+    case "server":
+    case "shared-memory":
+    case "skills":
+    case "teleport":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export async function runSubcommand(argv: string[]): Promise<number | null> {
+  const [command, ...rest] = argv;
+
+  if (!command) {
+    return null;
+  }
+
+  switch (command) {
+    case "version":
+      return runVersionSubcommand();
+    case "update":
+    case "upgrade":
+      return runUpdateSubcommand();
+    case "memory":
+    case "memfs": // legacy alias
+      return runMemorySubcommand(rest);
+    case "agents":
+      return runAgentsSubcommand(rest);
+    case "app-server":
+      console.error(
+        "Warning: `letta app-server` is deprecated. Use `ppa-runtime server --listen` instead.",
+      );
+      return runServerSubcommand(asLegacyAppServerCommand(rest));
+    case "messages":
+      return runMessagesSubcommand(rest);
+    case "mcp":
+      return runMcpSubcommand(rest);
+    case "computers":
+    case "environments": // legacy alias
+    case "envs": // legacy alias
+      return runEnvironmentsSubcommand(rest);
+    case "mods":
+      return runModsSubcommand(rest);
+    case "sandbox":
+      return runSandboxSubcommand(rest);
+    case "secret":
+      return runSecretSubcommand(rest);
+    case "teleport":
+      return runTeleportSubcommand(rest);
+    case "server":
+      return runServerSubcommand(rest);
+    case "feedback":
+      return runFeedbackSubcommand(rest);
+    case "remote": // alias
+      return runListenSubcommand(rest);
+    case "connect":
+      return runConnectSubcommand(rest);
+    case "backend":
+      return runBackendSubcommand(rest);
+    case "setup":
+      return runSetupSubcommand(rest);
+    case "install":
+      return runInstallSubcommand(rest);
+    case "shared-memory":
+      return runSharedMemorySubcommand(rest);
+    case "skills":
+      return runSkillsSubcommand(rest);
+    case "cron":
+      return runCronSubcommand(rest);
+    case "channels":
+      return runChannelsSubcommand(rest);
+    case "channel-gateway": {
+      const { runChannelGatewaySubcommand } = await import("./channel-gateway");
+      return runChannelGatewaySubcommand(rest);
+    }
+    case "local-backend":
+      return runLocalBackendSubcommand(rest);
+    case "trajectories":
+    case "trajectory": // alias
+      return runTrajectoriesSubcommand(rest);
+    default:
+      return null;
+  }
+}

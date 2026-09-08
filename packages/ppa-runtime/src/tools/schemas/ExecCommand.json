@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "cmd": {
+      "type": "string",
+      "description": "Shell command to execute."
+    },
+    "description": {
+      "type": "string",
+      "description": "Clear, concise user-facing status label for what this command does. It may be shown directly in chat with no prefix, so make it grammatical by itself and avoid tense-dependent wording. Use an imperative or purpose phrase like `Find debug log entries` or `Search recent logs for errors`. Describe the command's purpose, not its shell syntax. Keep it brief for simple commands; add only enough context to clarify commands that are hard to parse at a glance."
+    },
+    "login": {
+      "type": "boolean",
+      "description": "True runs the shell with -l/-i semantics; false disables them. Defaults to true."
+    },
+    "max_output_tokens": {
+      "type": "number",
+      "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy."
+    },
+    "shell": {
+      "type": "string",
+      "description": "Shell binary to launch. Defaults to the user's default shell."
+    },
+    "tty": {
+      "type": "boolean",
+      "description": "True allocates a PTY for the command; false or omitted uses plain pipes."
+    },
+    "workdir": {
+      "type": "string",
+      "description": "Working directory for the command. Defaults to the turn cwd."
+    },
+    "yield_time_ms": {
+      "type": "number",
+      "description": "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."
+    }
+  },
+  "required": ["cmd", "description"],
+  "additionalProperties": false
+}

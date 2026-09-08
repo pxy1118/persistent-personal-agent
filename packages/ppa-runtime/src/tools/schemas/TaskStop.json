@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "The ID of the background task to stop"
+    }
+  },
+  "required": ["task_id"],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

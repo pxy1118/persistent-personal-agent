@@ -1,0 +1,187 @@
+import { homedir } from "node:os";
+import type { Letta } from "@letta-ai/letta-client";
+import { Box } from "ink";
+import { useEffect, useState } from "react";
+import { getModelDisplayName } from "@/agent/model";
+import { isLocalBackendEnabled } from "@/backend";
+import { getStartupModelDisplayOverride } from "@/cli/helpers/startup-model-display";
+import { useTerminalWidth } from "@/cli/hooks/use-terminal-width";
+import { settingsManager } from "@/settings-manager";
+import { getVersion } from "@/version";
+import { AnimatedLogo } from "./AnimatedLogo";
+import { colors } from "./colors";
+import { Text } from "./Text";
+
+/**
+ * Convert absolute path to use ~ for home directory
+ */
+function toTildePath(absolutePath: string): string {
+  const home = homedir();
+  if (absolutePath.startsWith(home)) {
+    return `~${absolutePath.slice(home.length)}`;
+  }
+  return absolutePath;
+}
+
+/**
+ * Synchronously determine auth method from env vars (for initial render).
+ * Returns null if we need to check keychain/settings asynchronously.
+ */
+function getInitialAuthMethod(): "local" | "url" | "api-key" | null {
+  if (isLocalBackendEnabled()) return "local";
+  if (process.env.LETTA_BASE_URL) return "url";
+  if (process.env.LETTA_API_KEY) return "api-key";
+  return null; // Need async check for keychain/settings
+}
+
+/**
+ * Determine the auth method used (async for keychain access)
+ */
+async function getAuthMethod(): Promise<"local" | "url" | "api-key" | "oauth"> {
+  if (isLocalBackendEnabled()) return "local";
+  // Check if custom URL is being used
+  if (process.env.LETTA_BASE_URL) {
+    return "url";
+  }
+  // Check if API key from env
+  if (process.env.LETTA_API_KEY) {
+    return "api-key";
+  }
+  // Check settings for refresh token (OAuth) from keychain tokens
+  const settings = await settingsManager.getSettingsWithSecureTokens();
+  if (settings.refreshToken) {
+    return "oauth";
+  }
+  // Check if API key stored in settings or keychain
+  if (settings.env?.LETTA_API_KEY) {
+    return "api-key";
+  }
+  return "oauth"; // default
+}
+
+type LoadingState =
+  | "loading_profiles"
+  | "assembling"
+  | "importing"
+  | "initializing"
+  | "checking"
+  | "selecting_global"
+  | "ready";
+
+export function WelcomeScreen({
+  loadingState,
+  continueSession,
+  agentState,
+  startupHasAvailableLocalModels = true,
+}: {
+  loadingState: LoadingState;
+  continueSession?: boolean;
+  agentState?: Letta.AgentState | null;
+  startupHasAvailableLocalModels?: boolean;
+}) {
+  // Keep hook call for potential future responsive behavior
+  useTerminalWidth();
+  const cwd = process.cwd();
+  const version = getVersion();
+
+  const tildePath = toTildePath(cwd);
+
+  // Get model display name (pretty name if available, otherwise last part of handle)
+  // Build full model handle from llm_config (model_endpoint_type/model) like App.tsx does
+  const llmConfig = agentState?.llm_config;
+  const fullModel =
+    llmConfig?.model_endpoint_type && llmConfig?.model
+      ? `${llmConfig.model_endpoint_type}/${llmConfig.model}`
+      : (llmConfig?.model ?? null);
+  const startupModelDisplayOverride = getStartupModelDisplayOverride({
+    isLocalBackend: isLocalBackendEnabled(),
+    startupHasAvailableLocalModels,
+  });
+  const model =
+    startupModelDisplayOverride ??
+    (fullModel
+      ? (getModelDisplayName(fullModel) ?? fullModel.split("/").pop())
+      : undefined);
+
+  // Get auth method - use sync check for env vars, async only for keychain
+  const initialAuth = getInitialAuthMethod();
+  const [authMethod, setAuthMethod] = useState<
+    "local" | "url" | "api-key" | "oauth"
+  >(initialAuth ?? "oauth");
+
+  useEffect(() => {
+    // Only run async check if env vars didn't determine auth method
+    if (!initialAuth) {
+      getAuthMethod().then(setAuthMethod);
+    }
+  }, [initialAuth]);
+  const authDisplay =
+    authMethod === "local"
+      ? "Local"
+      : authMethod === "url"
+        ? process.env.LETTA_BASE_URL || "Custom URL"
+        : "Cloud";
+
+  // Check if memfs (context repositories) is enabled for this agent
+  const memfsEnabled = agentState?.id
+    ? settingsManager.isMemfsEnabled(agentState.id)
+    : true; // Don't warn while agent is still loading
+
+  return (
+    <Box flexDirection="row" marginTop={1}>
+      {/* Left column: Logo */}
+      <Box flexDirection="column" paddingLeft={1} paddingRight={2}>
+        <AnimatedLogo
+          color={colors.welcome.accent}
+          animate={loadingState !== "ready"}
+        />
+      </Box>
+
+      {/* Right column: Text info */}
+      <Box flexDirection="column" marginTop={0}>
+        {/* Row 1: Letta Code + version */}
+        <Box>
+          <Text bold>Letta Code</Text>
+          <Text color="gray"> v{version}</Text>
+        </Box>
+        {/* Row 2: model · auth (or just auth while loading) */}
+        <Text color="gray">
+          {model ? `${model} · ${authDisplay}` : authDisplay}
+        </Text>
+        {/* Row 3: loading status, then path once ready */}
+        <Text color="gray">
+          {loadingState === "ready"
+            ? tildePath
+            : getLoadingMessage(loadingState, !!continueSession)}
+        </Text>
+        {/* Row 4: memfs warning if not enabled (skip for self-hosted servers) */}
+        {loadingState === "ready" && !memfsEnabled && authMethod !== "url" && (
+          <Text color="yellow">
+            Warning: Context repositories are not enabled for this agent. Run
+            /memfs enable to enable.
+          </Text>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+function getLoadingMessage(
+  loadingState: LoadingState,
+  continueSession: boolean,
+): string {
+  switch (loadingState) {
+    case "loading_profiles":
+      return "Loading pinned agents...";
+    case "initializing":
+      return continueSession ? "Resuming agent..." : "Creating agent...";
+    case "assembling":
+      return "Assembling tools...";
+    case "importing":
+      return "Importing agent...";
+    case "checking":
+      return "Checking for pending approvals...";
+    default:
+      return "Loading...";
+  }
+}

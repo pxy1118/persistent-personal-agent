@@ -1,0 +1,802 @@
+import type { ApprovalResult } from "@/agent/approval-execution";
+import { normalizeApprovalResultsForPersistence } from "@/agent/approval-result-normalization";
+import { INTERRUPTED_BY_USER } from "@/constants";
+import { LIMITS, truncateByChars } from "@/tools/impl/truncation";
+import type {
+  ClientToolEndMessage,
+  ClientToolStartMessage,
+} from "@/types/protocol_v2";
+import { isDebugEnabled } from "@/utils/debug";
+import { collectApprovalResultToolCallIds } from "./approval";
+import {
+  createLifecycleMessageBase,
+  emitCanonicalMessageDelta,
+} from "./protocol-outbound";
+import { clearRecoveredApprovalState } from "./runtime";
+import type { ListenerTransport } from "./transport";
+import type {
+  ConversationRuntime,
+  InterruptPopulateInput,
+  InterruptToolReturn,
+  RecoveredApprovalState,
+} from "./types";
+
+const INTERRUPT_TOOL_RETURN_MAX_CHARS = LIMITS.BASH_OUTPUT_CHARS;
+
+const STREAMING_TOOL_OUTPUT_MAX_CHARS = LIMITS.BASH_OUTPUT_CHARS;
+const STREAMING_TOOL_OUTPUT_EMIT_INTERVAL_MS = 100;
+
+export type ToolExecutionOutputEmitter = ((
+  toolCallId: string,
+  chunk: string,
+  isStderr?: boolean,
+) => void) & {
+  flush: () => void;
+};
+
+type StreamingToolOutputState = {
+  messageId: string;
+  stdout: string;
+  stderr: string;
+  dirty: boolean;
+  lastEmittedAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+};
+
+type ClientToolExecutionInfo = {
+  toolCallId: string;
+  toolName?: string;
+  toolArgs?: string;
+};
+
+function truncateInterruptToolReturn(text: string): string {
+  const { content } = truncateByChars(
+    text,
+    INTERRUPT_TOOL_RETURN_MAX_CHARS,
+    "tool_return_message",
+  );
+  return content;
+}
+
+function normalizeInterruptOutputLines(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const filtered = value.filter(
+    (entry): entry is string => typeof entry === "string",
+  );
+  if (filtered.length === 0) {
+    return undefined;
+  }
+
+  const combinedLength = filtered.reduce((sum, entry) => sum + entry.length, 0);
+  return combinedLength <= INTERRUPT_TOOL_RETURN_MAX_CHARS
+    ? filtered
+    : undefined;
+}
+
+function appendStreamingOutputWithCap(current: string, chunk: string): string {
+  if (chunk.length === 0) {
+    return current;
+  }
+
+  const next = `${current}${chunk}`;
+  if (next.length <= STREAMING_TOOL_OUTPUT_MAX_CHARS) {
+    return next;
+  }
+
+  return next.slice(next.length - STREAMING_TOOL_OUTPUT_MAX_CHARS);
+}
+
+function normalizeStreamingOutputLines(text: string): string[] | undefined {
+  if (text.length === 0) {
+    return undefined;
+  }
+
+  const lines = text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => line.length > 0);
+
+  return lines.length > 0 ? lines : undefined;
+}
+
+export function asToolReturnStatus(value: unknown): "success" | "error" | null {
+  if (value === "success" || value === "error") {
+    return value;
+  }
+  return null;
+}
+
+export function normalizeToolReturnValue(value: unknown): string {
+  if (typeof value === "string") {
+    return truncateInterruptToolReturn(value);
+  }
+  if (Array.isArray(value)) {
+    const textParts = value
+      .filter(
+        (
+          part,
+        ): part is {
+          type: string;
+          text: string;
+        } =>
+          !!part &&
+          typeof part === "object" &&
+          "type" in part &&
+          part.type === "text" &&
+          "text" in part &&
+          typeof part.text === "string",
+      )
+      .map((part) => part.text);
+    if (textParts.length > 0) {
+      return truncateInterruptToolReturn(textParts.join("\n"));
+    }
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "type" in value &&
+    value.type === "text" &&
+    "text" in value &&
+    typeof value.text === "string"
+  ) {
+    return truncateInterruptToolReturn(value.text);
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  try {
+    return truncateInterruptToolReturn(JSON.stringify(value));
+  } catch {
+    return truncateInterruptToolReturn(String(value));
+  }
+}
+
+export function normalizeInterruptedApprovalsForQueue(
+  approvals: ApprovalResult[] | null,
+  interruptedToolCallIds: string[],
+): ApprovalResult[] | null {
+  if (!approvals || approvals.length === 0) {
+    return approvals;
+  }
+
+  return normalizeApprovalResultsForPersistence(approvals, {
+    interruptedToolCallIds,
+    allowInterruptTextFallback: true,
+  });
+}
+
+export function normalizeExecutionResultsForInterruptParity(
+  runtime: ConversationRuntime,
+  executionResults: ApprovalResult[],
+  executingToolCallIds: string[],
+): ApprovalResult[] {
+  if (!runtime.cancelRequested || executionResults.length === 0) {
+    return executionResults;
+  }
+
+  return normalizeApprovalResultsForPersistence(executionResults, {
+    interruptedToolCallIds: executingToolCallIds,
+  });
+}
+
+export function extractCanonicalToolReturnsFromWire(
+  payload: Record<string, unknown>,
+): InterruptToolReturn[] {
+  const fromArray: InterruptToolReturn[] = [];
+  const toolReturnsValue = payload.tool_returns;
+  if (Array.isArray(toolReturnsValue)) {
+    for (const raw of toolReturnsValue) {
+      if (!raw || typeof raw !== "object") {
+        continue;
+      }
+      const rec = raw as Record<string, unknown>;
+      const toolCallId =
+        typeof rec.tool_call_id === "string" ? rec.tool_call_id : null;
+      const status = asToolReturnStatus(rec.status);
+      if (!toolCallId || !status) {
+        continue;
+      }
+      const stdout = normalizeInterruptOutputLines(rec.stdout);
+      const stderr = normalizeInterruptOutputLines(rec.stderr);
+      fromArray.push({
+        tool_call_id: toolCallId,
+        status,
+        tool_return: normalizeToolReturnValue(rec.tool_return),
+        ...(stdout ? { stdout } : {}),
+        ...(stderr ? { stderr } : {}),
+      });
+    }
+  }
+  if (fromArray.length > 0) {
+    return fromArray;
+  }
+
+  const topLevelToolCallId =
+    typeof payload.tool_call_id === "string" ? payload.tool_call_id : null;
+  const topLevelStatus = asToolReturnStatus(payload.status);
+  if (!topLevelToolCallId || !topLevelStatus) {
+    return [];
+  }
+  const stdout = normalizeInterruptOutputLines(payload.stdout);
+  const stderr = normalizeInterruptOutputLines(payload.stderr);
+  return [
+    {
+      tool_call_id: topLevelToolCallId,
+      status: topLevelStatus,
+      tool_return: normalizeToolReturnValue(payload.tool_return),
+      ...(stdout ? { stdout } : {}),
+      ...(stderr ? { stderr } : {}),
+    },
+  ];
+}
+
+export function normalizeToolReturnWireMessage(
+  chunk: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (chunk.message_type !== "tool_return_message") {
+    return chunk;
+  }
+
+  const canonicalToolReturns = extractCanonicalToolReturnsFromWire(chunk);
+  if (canonicalToolReturns.length === 0) {
+    return null;
+  }
+
+  const {
+    tool_call_id: _toolCallId,
+    status: _status,
+    tool_return: _toolReturn,
+    stdout: _stdout,
+    stderr: _stderr,
+    ...rest
+  } = chunk;
+
+  return {
+    ...rest,
+    message_type: "tool_return_message",
+    tool_returns: canonicalToolReturns,
+  };
+}
+
+export function extractInterruptToolReturns(
+  approvals: ApprovalResult[] | null,
+): InterruptToolReturn[] {
+  if (!approvals || approvals.length === 0) {
+    return [];
+  }
+
+  return approvals.flatMap((approval): InterruptToolReturn[] => {
+    if (!approval || typeof approval !== "object") {
+      return [];
+    }
+
+    if ("type" in approval && approval.type === "tool") {
+      const toolCallId =
+        "tool_call_id" in approval && typeof approval.tool_call_id === "string"
+          ? approval.tool_call_id
+          : null;
+      if (!toolCallId) {
+        return [];
+      }
+      const status =
+        "status" in approval && approval.status === "success"
+          ? "success"
+          : "error";
+      const stdout =
+        "stdout" in approval
+          ? normalizeInterruptOutputLines(approval.stdout)
+          : undefined;
+      const stderr =
+        "stderr" in approval
+          ? normalizeInterruptOutputLines(approval.stderr)
+          : undefined;
+
+      return [
+        {
+          tool_call_id: toolCallId,
+          status,
+          tool_return:
+            "tool_return" in approval
+              ? normalizeToolReturnValue(approval.tool_return)
+              : "",
+          ...(stdout ? { stdout } : {}),
+          ...(stderr ? { stderr } : {}),
+        },
+      ];
+    }
+
+    if ("type" in approval && approval.type === "approval") {
+      const toolCallId =
+        "tool_call_id" in approval && typeof approval.tool_call_id === "string"
+          ? approval.tool_call_id
+          : null;
+      if (!toolCallId) {
+        return [];
+      }
+      const reason =
+        "reason" in approval && typeof approval.reason === "string"
+          ? approval.reason
+          : "User interrupted the stream";
+      return [
+        {
+          tool_call_id: toolCallId,
+          status: "error",
+          tool_return: reason,
+        },
+      ];
+    }
+
+    return [];
+  });
+}
+
+export function emitInterruptToolReturnMessage(
+  socket: ListenerTransport,
+  runtime: ConversationRuntime,
+  approvals: ApprovalResult[] | null,
+  runId?: string | null,
+  uuidPrefix: string = "interrupt-tool-return",
+): void {
+  const toolReturns = extractInterruptToolReturns(approvals);
+  if (toolReturns.length === 0) {
+    return;
+  }
+
+  const resolvedRunId = runId ?? runtime.activeRunId ?? undefined;
+  for (const toolReturn of toolReturns) {
+    emitCanonicalMessageDelta(
+      socket,
+      runtime,
+      {
+        type: "message",
+        message_type: "tool_return_message",
+        // No persisted tool_return_message exists yet. Use a synthetic id
+        // outside Core's `message-*` namespace; the real approval message id
+        // identifies the request, not this return row (LET-10608).
+        id: `synthetic-${uuidPrefix}-${crypto.randomUUID()}`,
+        date: new Date().toISOString(),
+        run_id: resolvedRunId,
+        status: toolReturn.status,
+        tool_call_id: toolReturn.tool_call_id,
+        tool_return: toolReturn.tool_return,
+        tool_returns: [
+          {
+            tool_call_id: toolReturn.tool_call_id,
+            status: toolReturn.status,
+            tool_return: toolReturn.tool_return,
+            ...(toolReturn.stdout ? { stdout: toolReturn.stdout } : {}),
+            ...(toolReturn.stderr ? { stderr: toolReturn.stderr } : {}),
+          },
+        ],
+      },
+      {
+        agent_id: runtime.agentId ?? undefined,
+        conversation_id: runtime.conversationId,
+      },
+    );
+  }
+}
+
+export function emitToolExecutionStartedEvents(
+  socket: ListenerTransport,
+  runtime: ConversationRuntime,
+  params: {
+    toolCallIds?: string[];
+    toolCalls?: ClientToolExecutionInfo[];
+    runId?: string | null;
+    agentId?: string;
+    conversationId?: string;
+  },
+): void {
+  const toolCalls: ClientToolExecutionInfo[] =
+    params.toolCalls ??
+    (params.toolCallIds ?? []).map((toolCallId) => ({ toolCallId }));
+  for (const toolCall of toolCalls) {
+    const messageId = runtime.approvalMessageIdByToolCallId.get(
+      toolCall.toolCallId,
+    );
+    const delta: ClientToolStartMessage = {
+      ...createLifecycleMessageBase("client_tool_start", params.runId),
+      ...(messageId ? { id: messageId } : {}),
+      tool_call_id: toolCall.toolCallId,
+      ...(toolCall.toolName ? { tool_name: toolCall.toolName } : {}),
+      ...(toolCall.toolArgs ? { tool_args: toolCall.toolArgs } : {}),
+    };
+    emitCanonicalMessageDelta(socket, runtime, delta, {
+      agent_id: params.agentId,
+      conversation_id: params.conversationId,
+    });
+  }
+}
+
+export function emitToolExecutionFinishedEvents(
+  socket: ListenerTransport,
+  runtime: ConversationRuntime,
+  params: {
+    approvals: ApprovalResult[] | null;
+    runId?: string | null;
+    agentId?: string;
+    conversationId?: string;
+  },
+): void {
+  const toolReturns = extractInterruptToolReturns(params.approvals);
+  for (const toolReturn of toolReturns) {
+    const messageId = runtime.approvalMessageIdByToolCallId.get(
+      toolReturn.tool_call_id,
+    );
+    const delta: ClientToolEndMessage = {
+      ...createLifecycleMessageBase("client_tool_end", params.runId),
+      ...(messageId ? { id: messageId } : {}),
+      tool_call_id: toolReturn.tool_call_id,
+      status: toolReturn.status,
+    };
+    emitCanonicalMessageDelta(socket, runtime, delta, {
+      agent_id: params.agentId,
+      conversation_id: params.conversationId,
+    });
+  }
+}
+
+/**
+ * Close out `client_tool_start` lifecycle events when execution throws
+ * before results exist. Without a matching `client_tool_end`, observer UIs
+ * that pair start/end events shimmer the orphaned tool call forever.
+ */
+export function emitToolExecutionAbortedEvents(
+  socket: ListenerTransport,
+  runtime: ConversationRuntime,
+  params: {
+    toolCallIds: string[];
+    runId?: string | null;
+    agentId?: string;
+    conversationId?: string;
+  },
+): void {
+  for (const toolCallId of params.toolCallIds) {
+    const messageId = runtime.approvalMessageIdByToolCallId.get(toolCallId);
+    const delta: ClientToolEndMessage = {
+      ...createLifecycleMessageBase("client_tool_end", params.runId),
+      ...(messageId ? { id: messageId } : {}),
+      tool_call_id: toolCallId,
+      status: "error",
+    };
+    emitCanonicalMessageDelta(socket, runtime, delta, {
+      agent_id: params.agentId,
+      conversation_id: params.conversationId,
+    });
+  }
+}
+
+export function createToolExecutionOutputEmitter(
+  socket: ListenerTransport,
+  runtime: ConversationRuntime,
+  params: {
+    runId?: string | null;
+    agentId?: string;
+    conversationId?: string;
+    shouldEmit?: () => boolean;
+  },
+): ToolExecutionOutputEmitter {
+  const outputByToolCallId = new Map<string, StreamingToolOutputState>();
+
+  const emitToolOutput = (
+    toolCallId: string,
+    outputState: StreamingToolOutputState,
+  ) => {
+    if (!outputState.dirty || params.shouldEmit?.() === false) {
+      return;
+    }
+
+    outputState.dirty = false;
+    outputState.lastEmittedAt = Date.now();
+
+    const stdout = normalizeStreamingOutputLines(outputState.stdout);
+    const stderr = normalizeStreamingOutputLines(outputState.stderr);
+    const toolReturn = [stdout?.join("\n"), stderr?.join("\n")]
+      .filter(
+        (part): part is string => typeof part === "string" && part.length > 0,
+      )
+      .join("\n");
+
+    emitCanonicalMessageDelta(
+      socket,
+      runtime,
+      {
+        type: "message",
+        message_type: "tool_return_message",
+        id: outputState.messageId,
+        date: new Date().toISOString(),
+        run_id: params.runId ?? undefined,
+        status: "success",
+        tool_call_id: toolCallId,
+        tool_return: toolReturn,
+        tool_returns: [
+          {
+            tool_call_id: toolCallId,
+            status: "success",
+            tool_return: toolReturn,
+            ...(stdout ? { stdout } : {}),
+            ...(stderr ? { stderr } : {}),
+          },
+        ],
+      },
+      {
+        agent_id: params.agentId,
+        conversation_id: params.conversationId,
+      },
+    );
+  };
+
+  const flushToolOutput = (
+    toolCallId: string,
+    outputState: StreamingToolOutputState,
+  ) => {
+    if (outputState.timer) {
+      clearTimeout(outputState.timer);
+      outputState.timer = null;
+    }
+    emitToolOutput(toolCallId, outputState);
+  };
+
+  const emitter = ((
+    toolCallId: string,
+    chunk: string,
+    isStderr: boolean = false,
+  ) => {
+    if (!toolCallId || chunk.length === 0 || params.shouldEmit?.() === false) {
+      return;
+    }
+
+    const existing = outputByToolCallId.get(toolCallId);
+    const outputState = existing ?? {
+      // Stable across snapshots for this tool call, but outside Core's
+      // `message-*` namespace because no persisted return row exists yet.
+      messageId: `synthetic-tool-return-stream-${toolCallId}`,
+      stdout: "",
+      stderr: "",
+      dirty: false,
+      lastEmittedAt: 0,
+      timer: null,
+    };
+
+    if (isStderr) {
+      outputState.stderr = appendStreamingOutputWithCap(
+        outputState.stderr,
+        chunk,
+      );
+    } else {
+      outputState.stdout = appendStreamingOutputWithCap(
+        outputState.stdout,
+        chunk,
+      );
+    }
+
+    outputByToolCallId.set(toolCallId, outputState);
+    outputState.dirty = true;
+
+    const now = Date.now();
+    const elapsed = now - outputState.lastEmittedAt;
+    if (elapsed >= STREAMING_TOOL_OUTPUT_EMIT_INTERVAL_MS) {
+      flushToolOutput(toolCallId, outputState);
+      return;
+    }
+
+    if (!outputState.timer) {
+      outputState.timer = setTimeout(() => {
+        outputState.timer = null;
+        emitToolOutput(toolCallId, outputState);
+      }, STREAMING_TOOL_OUTPUT_EMIT_INTERVAL_MS - elapsed);
+    }
+  }) as ToolExecutionOutputEmitter;
+
+  emitter.flush = () => {
+    for (const [toolCallId, outputState] of outputByToolCallId.entries()) {
+      flushToolOutput(toolCallId, outputState);
+    }
+  };
+
+  return emitter;
+}
+
+export function getInterruptApprovalsForEmission(
+  runtime: ConversationRuntime,
+  params: {
+    lastExecutionResults: ApprovalResult[] | null;
+    agentId: string;
+    conversationId: string;
+  },
+): ApprovalResult[] | null {
+  if (params.lastExecutionResults && params.lastExecutionResults.length > 0) {
+    return params.lastExecutionResults;
+  }
+  const context = runtime.pendingInterruptedContext;
+  if (
+    !context ||
+    context.agentId !== params.agentId ||
+    context.conversationId !== params.conversationId ||
+    context.continuationEpoch !== runtime.continuationEpoch
+  ) {
+    return null;
+  }
+  if (
+    !runtime.pendingInterruptedResults ||
+    runtime.pendingInterruptedResults.length === 0
+  ) {
+    return null;
+  }
+  return runtime.pendingInterruptedResults;
+}
+
+export function populateInterruptQueue(
+  runtime: ConversationRuntime,
+  input: InterruptPopulateInput,
+): boolean {
+  const shouldPopulate =
+    !runtime.pendingInterruptedResults ||
+    runtime.pendingInterruptedResults.length === 0 ||
+    !runtime.pendingInterruptedContext;
+
+  if (!shouldPopulate) return false;
+
+  if (input.lastExecutionResults && input.lastExecutionResults.length > 0) {
+    runtime.pendingInterruptedResults = normalizeInterruptedApprovalsForQueue(
+      input.lastExecutionResults,
+      input.lastExecutingToolCallIds,
+    );
+    runtime.pendingInterruptedContext = {
+      agentId: input.agentId,
+      conversationId: input.conversationId,
+      continuationEpoch: runtime.continuationEpoch,
+    };
+    runtime.pendingInterruptedToolCallIds = [...input.lastExecutingToolCallIds];
+    return true;
+  }
+
+  if (input.lastExecutingToolCallIds.length > 0) {
+    runtime.pendingInterruptedResults = input.lastExecutingToolCallIds.map(
+      (toolCallId) => ({
+        type: "tool" as const,
+        tool_call_id: toolCallId,
+        tool_return: INTERRUPTED_BY_USER,
+        status: "error" as const,
+      }),
+    );
+    runtime.pendingInterruptedContext = {
+      agentId: input.agentId,
+      conversationId: input.conversationId,
+      continuationEpoch: runtime.continuationEpoch,
+    };
+    runtime.pendingInterruptedToolCallIds = [...input.lastExecutingToolCallIds];
+    return true;
+  }
+
+  const batchToolCallIds = [...runtime.pendingApprovalBatchByToolCallId.keys()];
+  const pendingIds =
+    batchToolCallIds.length > 0
+      ? batchToolCallIds
+      : input.lastNeedsUserInputToolCallIds;
+
+  if (pendingIds.length > 0) {
+    runtime.pendingInterruptedResults = pendingIds.map((toolCallId) => ({
+      type: "approval" as const,
+      tool_call_id: toolCallId,
+      approve: false,
+      reason: "User interrupted the stream",
+    }));
+    runtime.pendingInterruptedContext = {
+      agentId: input.agentId,
+      conversationId: input.conversationId,
+      continuationEpoch: runtime.continuationEpoch,
+    };
+    runtime.pendingInterruptedToolCallIds = null;
+    return true;
+  }
+
+  if (isDebugEnabled()) {
+    console.warn(
+      "[Listen] Cancel during approval loop but no tool_call_ids available " +
+        "for interrupted queue — next turn may hit pre-stream conflict. " +
+        `batchMap=${runtime.pendingApprovalBatchByToolCallId.size}, ` +
+        `lastNeedsUserInput=${input.lastNeedsUserInputToolCallIds.length}`,
+    );
+  }
+  return false;
+}
+
+export function consumeInterruptQueue(
+  runtime: ConversationRuntime,
+  agentId: string,
+  conversationId: string,
+): {
+  approvalMessage: {
+    type: "approval";
+    approvals: ApprovalResult[];
+    otid?: string;
+  };
+  interruptedToolCallIds: string[];
+} | null {
+  const ctx = runtime.pendingInterruptedContext;
+  const matchingContext =
+    !!ctx &&
+    ctx.agentId === agentId &&
+    ctx.conversationId === conversationId &&
+    ctx.continuationEpoch === runtime.continuationEpoch;
+
+  if (
+    !runtime.pendingInterruptedResults ||
+    runtime.pendingInterruptedResults.length === 0
+  ) {
+    if (matchingContext) {
+      runtime.pendingInterruptedResults = null;
+      runtime.pendingInterruptedContext = null;
+      runtime.pendingInterruptedToolCallIds = null;
+    }
+    return null;
+  }
+
+  let result: {
+    approvalMessage: {
+      type: "approval";
+      approvals: ApprovalResult[];
+      otid?: string;
+    };
+    interruptedToolCallIds: string[];
+  } | null = null;
+
+  if (matchingContext) {
+    result = {
+      approvalMessage: {
+        type: "approval",
+        approvals: runtime.pendingInterruptedResults,
+        otid: crypto.randomUUID(),
+      },
+      interruptedToolCallIds: runtime.pendingInterruptedToolCallIds
+        ? [...runtime.pendingInterruptedToolCallIds]
+        : [],
+    };
+  }
+
+  const queuedToolCallIds = collectApprovalResultToolCallIds(
+    runtime.pendingInterruptedResults,
+  );
+
+  runtime.pendingInterruptedResults = null;
+  runtime.pendingInterruptedContext = null;
+  runtime.pendingInterruptedToolCallIds = null;
+  for (const toolCallId of queuedToolCallIds) {
+    runtime.pendingApprovalBatchByToolCallId.delete(toolCallId);
+  }
+
+  return result;
+}
+
+export function stashRecoveredApprovalInterrupts(
+  runtime: ConversationRuntime,
+  recovered: RecoveredApprovalState,
+): boolean {
+  const approvals =
+    recovered.allApprovals ??
+    [...recovered.approvalsByRequestId.values()].map((entry) => entry.approval);
+  if (approvals.length === 0) {
+    clearRecoveredApprovalState(runtime);
+    return false;
+  }
+
+  runtime.pendingInterruptedResults = approvals.map((approval) => ({
+    type: "approval" as const,
+    tool_call_id: approval.toolCallId,
+    approve: false,
+    reason: "User interrupted the stream",
+  }));
+  runtime.pendingInterruptedContext = {
+    agentId: recovered.agentId,
+    conversationId: recovered.conversationId,
+    continuationEpoch: runtime.continuationEpoch,
+  };
+  runtime.pendingInterruptedToolCallIds = null;
+  clearRecoveredApprovalState(runtime);
+  return true;
+}

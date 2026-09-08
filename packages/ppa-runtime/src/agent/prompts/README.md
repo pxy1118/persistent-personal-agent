@@ -1,0 +1,73 @@
+# Prompts
+
+All prompt files are imported as text via `promptAssets.ts`. Files use `.md`, `.mdx` (memory blocks with YAML frontmatter), or `.txt` (system reminders injected as XML tags).
+
+## System prompts
+
+Selectable via the `/system` command. Each preset is a complete system prompt. Presets that need different standard vs memfs instructions keep separate full prompt files rather than appending memory sections at build time.
+
+| File | Used | Description |
+|------|------|-------------|
+| `letta_no_memfs.md` | Default for non-memfs agents | Letta-tuned system prompt for standard memory blocks |
+| `letta.md` | Default for hosted memfs agents | Letta-tuned system prompt for git-backed MemFS memory, including shared memory |
+| `letta_local_memfs.md` | Default for local backend memfs agents | Letta-tuned system prompt for local-only git-backed MemFS memory |
+| `source_claude.md` | `/system source-claude` | Near-verbatim Claude Code prompt for benchmarking |
+| `source_codex.md` | `/system source-codex` | Near-verbatim OpenAI Codex prompt for benchmarking |
+| `source_gemini.md` | `/system source-gemini` | Near-verbatim Gemini CLI prompt for benchmarking |
+
+### Source prompt provenance
+
+#### source_claude.md
+
+- **Source:** Claude Code (Anthropic)
+- **Version:** ~v2.1.50 (Feb 2026) — assembled from modular prompt files
+- **Reference:** https://github.com/Piebald-AI/claude-code-system-prompts
+- **Notes:** Since v2.1.20 the prompt is composed from ~110 atomic files at runtime. This is the rendered assembly for a default session (no custom output style, standard tools, TodoWrite present, Task subagents available).
+
+#### source_codex.md
+
+- **Source:** OpenAI Codex CLI (gpt-5.5 model)
+- **Version:** Extracted from `codex-rs/models-manager/models.json` @ openai/codex `main` (May 2026)
+- **Reference:** https://github.com/openai/codex
+- **Notes:** gpt-5.5 uses `model_messages.instructions_template` with a `{{ personality }}` placeholder; this snapshot renders the template substituted with `personality_pragmatic` (the default). Major drift from the prior gpt-5.3-codex snapshot: new senior-engineer framing, expanded engineering judgment guidance, substantially expanded frontend guidance, softer dirty-worktree handling, updated autonomy/compaction instructions, revised formatting/file-link rules, and new anti-creature-language guidance.
+- **Automation:** `.github/workflows/codex-agent-watch.yml` checks stable `openai/codex` releases, records terminal outcomes in the central tracker, and dispatches Amelia when watched tool surfaces change.
+
+#### source_gemini.md
+
+- **Source:** Gemini CLI (Google)
+- **Version:** snippets.ts (Feb 2026, copyright 2026 Google LLC)
+- **Reference:** https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/prompts/snippets.ts
+- **Notes:** Rendered for interactive mode, git repo present, outside sandbox, standard tools, no sub-agents, no skills, and no YOLO mode. Tool name variables resolved. Conditional sections (YOLO mode, sandbox, GEMINI.md) noted but not inlined.
+
+## Memory blocks (`.mdx`)
+
+Default values for agent memory blocks. Loaded via `MEMORY_PROMPTS` in `promptAssets.ts`. Each has YAML frontmatter with `label` and `description`.
+
+| File | Used | Description |
+|------|------|-------------|
+| `persona.mdx` | Default persona for all new agents | Blank-slate "ready to be shaped" |
+| `persona_blank.mdx` | Overrides persona for the Blank personality | Prompts user to provide a personality |
+| `persona_memo.mdx` | Overrides persona for the default Letta Code agent | Warm, curious collaborator personality |
+| `persona_kawaii.mdx` | Not wired into any agent creation flow | Kawaii voice persona preset |
+| `human.mdx` | Default human block for all new agents | Placeholder for learning about the user |
+| `project.mdx` | Registered but not loaded into agents | Placeholder for codebase knowledge |
+| `style.mdx` | Registered but not loaded into agents | Placeholder for coding preferences |
+| `memory_filesystem.mdx` | Read-only block for memfs agents | Renders the memory directory tree in-context |
+
+## Skill/command prompts
+
+Injected when the user invokes a specific slash command.
+
+| File | Used | Description |
+|------|------|-------------|
+| `remember.md` | `/remember` command | Instructs the agent to commit conversation context to memory |
+| `skill_creator_mode.md` | `/skill` command | Guides the agent through designing a new skill |
+
+## System reminders (`.txt`)
+
+Short XML-wrapped messages injected into the conversation as system events.
+
+| File | Used | Description |
+|------|------|-------------|
+| `approval_recovery_alert.txt` | Keep-alive ping | Automated message to resume after approval timeout |
+| `interrupt_recovery_alert.txt` | User interrupts stream | Notifies the agent the stream was interrupted |

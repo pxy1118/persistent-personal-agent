@@ -1,4 +1,12 @@
 node_modules/
+packages/ppa-runtime/letta.js
+packages/ppa-runtime/letta.js.map
+packages/ppa-runtime/ppa-runtime.js
+packages/ppa-runtime/ppa-runtime.js.map
+packages/ppa-runtime/image-resize-worker.js
+packages/ppa-runtime/image-resize-worker.js.map
+packages/ppa-runtime/dist/
+packages/ppa-runtime/skills/
 .ppa/
 config/local.json
 config/models.json

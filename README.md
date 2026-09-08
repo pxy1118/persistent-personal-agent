@@ -1,6 +1,6 @@
 # Persistent Personal Agent
 
-拥有独立中文终端和 Windows 桌宠界面的本地个人助手。PPA 提供聊天、会话、人格/记忆编辑、模型配置切换和工具审批；Letta 在后台管理 Agent 执行与持久状态。默认界面显示 PPA 和助手自己的名字，不再启动 Letta 的终端界面。
+拥有独立中文终端和 Windows 桌宠界面的本地个人助手。PPA 提供聊天、会话、人格/记忆编辑、模型配置切换和工具审批；项目内维护的 PPA Runtime 管理 Agent 执行与持久状态。默认界面只显示 PPA 和助手自己的名字。
 
 ## 启动
 
@@ -8,16 +8,16 @@
 
 ```powershell
 npm ci
-npm run migrate:letta   # 首次初始化或从旧 PPA 迁移；重复执行不会覆盖已完成的导入
+npm run migrate:ppa     # 首次初始化或从旧 PPA 迁移；重复执行不会覆盖已完成的导入
 npm run doctor
 npm start
 ```
 
-也可双击 `start.cmd`，仍通过 `start.ps1` 和 `npm start` 启动 PPA 终端。默认复用已有固定 Agent 和会话，不重新导入人格，不登录云端，不自动启动、停止或更改模型服务。模型离线时仍可打开终端查看和编辑记忆，聊天会提示先启动模型并 `/reconnect`。`npm run start:letta` 保留为显式使用原生终端的维护入口。
+也可双击 `start.cmd`，仍通过 `start.ps1` 和 `npm start` 启动 PPA 终端。默认复用已有固定 Agent 和会话，不重新导入人格，不登录云端，不自动启动、停止或更改模型服务。模型离线时仍可打开终端查看和编辑记忆，聊天会提示先启动模型并 `/reconnect`。`npm run runtime` 是底层维护入口；旧的 `migrate:letta`、`start:letta`、`doctor:letta`、`backup:letta` 和 `restore:letta` 仅作为兼容别名保留。
 
 PPA 在运行期间启动一个受认证保护、仅监听本机随机端口的后台子进程，通过官方 App Server 接口交互；退出时关闭它，不安装系统服务、不提供网页、不创建常驻任务。后台输出写入 `.ppa/ppa-runtime.log`，不会混入聊天。
 
-依赖固定为 `@letta-ai/letta-code@0.31.12`，不依赖全局安装，不修改上游或 node_modules。Letta 自身仍间接使用 pi-ai；本项目已移除 Pi Coding Agent 运行时和直接 Pi 依赖。
+后台依赖已接管为仓库内的 `@ppa/runtime@0.31.12-ppa.1`，源码位于 `packages/ppa-runtime`，基于 Letta Code `v0.31.12` 的提交 `787b856f9db9f5030dc2976618e1d1f909f61612`。许可证、来源记录和原始文档均随包保留；间接的 Letta 客户端兼容依赖及旧存储字段本阶段不改名。
 
 ## 桌宠日常接口
 
@@ -40,11 +40,11 @@ npm run pet
 
 桌宠本身只使用鼠标位置、窗口几何和系统空闲时间，不读取窗口标题、桌面文件名，也不监听删除。助手只在用户要求查看屏幕或当前任务明确需要可见内容时调用受限读屏工具，不做周期截图。图片也可以通过用户选取的附件发送；虚拟点心不涉及真实文件。第一版没有语音识别、回复朗读或开机自启。
 
-桌宠沿用现有 Letta Agent ID、人格、记忆、模型和会话；`npm start` 的终端入口仍保留。同一数据目录只有一个 PPA 后台，使用桌宠前请退出终端；重复启动桌宠会唤起已有窗口。关闭聊天面板只是收起，右键“退出桌宠”才会停止所属后台。模型离线时仍可运行桌宠、访问可用记忆并手动重连，输入不会自动重发。
+桌宠沿用现有 Agent ID、人格、记忆、模型和会话；`npm start` 的终端入口仍保留。同一数据目录只有一个 PPA 后台，使用桌宠前请退出终端；重复启动桌宠会唤起已有窗口。关闭聊天面板只是收起，右键“退出桌宠”才会停止所属后台。模型离线时仍可运行桌宠、访问可用记忆并手动重连，输入不会自动重发。
 
 `PPA_DATA_DIR` 的默认值仍为 `.ppa`。桌宠自己的配置、位置、生活状态、主动次数和日志位于其 `pet/` 子目录，和助手长期记忆分开；PPA 备份会包含这些状态，旧备份缺少它们时使用默认值。备份前关闭桌宠。调试入口可指定 `--data-dir`，例如 `npm run pet -- --data-dir .ppa/pet-demo --no-backend`（仅动画演示）。
 
-实现位于 `desktop-pet/`，Python `QProcess` 通过 JSON 行协议调用 `src/pet-bridge.ts`，由桥接层复用 `PpaSession`。Qt 不等待模型，图片预加载、状态合并队列和后台存档保持动画响应。固定版本 Letta 0.31.12 的回合结束事件早于异步清理，跨回合可能出现审批失效；桌宠在新输入前重新连接所属运行时，保留会话与所选权限模式，不重建 Agent。若停止请求未能结束挂起流，关闭所属子进程后恢复同一会话，不重发输入。停止不撤销已经完成的工具操作。
+实现位于 `desktop-pet/`，Python `QProcess` 通过 JSON 行协议调用 `src/pet-bridge.ts`，由桥接层复用 `PpaSession`。Qt 不等待模型，图片预加载、状态合并队列和后台存档保持动画响应。PPA Runtime 在异步权限和记忆清理完成后才发送 `turn_finished`，因此正常跨回合直接复用当前后台。若停止请求未能结束挂起流，仍会关闭所属子进程后恢复同一会话，不重发输入。停止不撤销已经完成的工具操作。
 
 桌宠验证命令：
 
@@ -73,7 +73,7 @@ npm run smoke:pet:gui     # 在上一条创建的隔离身份中操作实际 Qt 
 }
 ```
 
-`provider` 默认 `openai-compatible`，目前还支持 `llama-cpp`。llama.cpp 服务通过原生 `/models` 无法被 0.31.12 正确识别视觉能力（它只读 `architecture.input_modalities`），PPA 会在 `llama-cpp` 连接下启动一个仅监听本机随机端口的模型能力桥：把原生发现探测改为 404，强制运行时走 `/props`（它读取 `modalities.vision`），其余请求原样转发；图片因此能作为用户消息真正送达视觉模型。桥只在 `llama-cpp` 提供方启用，`openai-compatible`（如 vLLM）行为不变。
+`provider` 默认 `openai-compatible`，目前还支持 `llama-cpp`。PPA Runtime 会逐模型合并原生 `/models` 与 `/props?model=<id>` 的能力信息：已有上下文元数据但缺少模态声明时，仍补查视觉能力；明确的逐模型元数据保持优先，避免模型之间发生能力串用。PPA 现在直接连接配置的原始模型地址，不再启动本地模型代理。
 
 `modelId: null` 在初始化或选择该模型配置时使用服务的首个模型，后续启动沿用已保存选择。终端 `/model` 列出项目配置，`/model ornith` 或 `/model qwen3.8` 在空闲时切换；人格、记忆和当前会话保留。contextWindow 必须与模型服务匹配，PPA 不调整服务端上下文。初始化使用对应 0.31.12 的本地状态适配器，运行中的编辑和切换通过原生接口完成；升级版本前须重新验证接口。
 
@@ -157,7 +157,7 @@ npm start
 
 权限模式（首次使用默认为标准审批，不继承旧 PPA 授权）：`/mode` 列出并切换；像 Claude Code 一样，聊天输入框直接按 **Tab** 向后循环、**Shift+Tab** 向前循环（有 `/` 补全项时 Tab 仍优先补全），模型思考期间也可以切换，底栏实时显示当前模式。`standard` 常规逐次确认；`acceptEdits` 自动批准文件写入/编辑/记忆（其余仍需确认）；`unrestricted` 全部工具免确认（谨慎使用）；`strict` 更保守、无自动放行。所选模式保存在当前 PPA 数据目录，并在会话切换、后台重连和应用重启后继续使用。
 
-多模态：输入 `/image "图片路径" [问题]` 把图片随消息发给助手；含空格的路径用引号。支持 PNG/JPG/JPEG/GIF/WebP/BMP/HEIC/HEIF，单张不超过 20MB。图片作为用户消息的一部分走原生多模态通道，不经工具链；是否真正送达取决于模型服务的视觉能力（llama.cpp 场景由模型能力桥识别，qwen3.8 服务声明支持多模态并已真实验收）。若后端无法处理图片，该回合自动降级为纯文本（不报错、不重发）。图片会以 base64 发送到配置的本地模型服务，不出本机，但会进入该会话的本地历史。
+多模态：输入 `/image "图片路径" [问题]` 把图片随消息发给助手；含空格的路径用引号。支持 PNG/JPG/JPEG/GIF/WebP/BMP/HEIC/HEIF，单张不超过 20MB。图片作为用户消息的一部分走原生多模态通道，不经工具链；是否真正送达取决于模型服务声明的视觉能力。若后端无法处理图片，该回合自动降级为纯文本（不报错、不重发）。图片会以 base64 发送到配置的模型服务，并进入该会话的本地历史。
 
 读屏工具：当你让助手“看看我的屏幕”或当前问题明确需要屏幕内容时，助手可以调用 `capture_screen` 读取主屏幕（也可选择全部显示器）。这是 PPA 内置的受限本机工具，不再为每次读取弹出审批；它只接受显示器范围和缩放上限，不提供任意命令入口。PPA 不生成独立截图文件，图像作为工具结果发送给当前模型，并可能保留在本机 Letta 会话历史中；远程 `modelBaseUrl` 会把图像发送到对应服务。该能力目前仅支持 Windows，并要求后端模型具备视觉能力。
 
@@ -195,9 +195,12 @@ npm start
 ## 验证
 
 ```powershell
+npm run runtime:build        # 构建仓库内的 @ppa/runtime
+npm run runtime:test         # 视觉发现与回合结束顺序的底层回归
+npm run runtime:pack         # 生成可审查的 @ppa/runtime 包
 npm run build
 npm test
-npm run smoke:letta:integration  # 真实发布包 CLI + 本地模拟 HTTP/SSE
+npm run smoke:letta:integration  # 兼容别名：PPA Runtime CLI + 本地模拟 HTTP/SSE
 npm run smoke:live              # 真实本地模型；创建隔离测试数据
 npm run smoke:interface         # PPA 交互层 + 真实原生后台 + 模拟模型（含批准后真实读屏）
 npm run smoke:terminal          # PPA 自有终端 + 当前真实模型，隔离验收身份
@@ -205,12 +208,12 @@ npm run smoke:image             # 真实模型多模态：发图并核对模型�
 npm run smoke:screen            # 实际截取当前主屏并验证 PNG 工具结果
 ```
 
-当前 33 项自动化测试通过；新增 PPA 接口的 14 项集成检查覆盖流式聊天、会话恢复、图片消息到达视觉模型、无需单独审批的真实读屏工具结果、记忆提交和冲突保护、真实文件审批/拒绝、思考期间权限模式切换及重启保留、中断、模型切换和离线记忆访问。自有终端已在真实 Windows PTY 和 vLLM Ornith 上验证中文回复、人格编辑、键盘批准文件写入、Escape 中断及正常退出。迁移阶段的 Qwen 记忆、工具和备份恢复验收继续保留为历史证据。
+本轮验收通过：根项目测试 36 项、PPA Runtime 聚焦回归 14 项、品牌及本地后端相关回归 85 项、真实 Qwen 核心检查 20 项、桌宠 Python 测试 32 项、PPA 接口集成 15 项和桌宠烟雾检查 16 项；从不含 `node_modules`、构建产物和已生成技能的全新目录执行 `npm ci`，随后构建及两组测试均通过。PPA 接口集成覆盖流式聊天、会话恢复、图片消息、读屏工具结果、记忆提交和冲突保护、文件审批/拒绝、思考期间权限模式切换及重启保留、中断、模型切换和离线记忆访问。
 
 本机报告位于 `.ppa/reports/letta-live.json`、`letta-integration.json`、`letta-pty.json` 和 `letta-migration-verification.json`。这些结果不保证长期陪伴体验或所有自然表达的记忆成功率；本地模型的工具选择和推理耗时仍会波动。
 
-新界面报告在 `.ppa/reports/ppa-interface.json`、`ppa-tui-real.json`、`ppa-image.json`；验收身份和文件位于隔离目录，不写入正式助手。上游终端命令不会自动透传到 PPA 界面，其他高级原生功能仍可通过维护入口访问。
+新界面报告在 `.ppa/reports/ppa-interface.json`、`ppa-tui-mock.json`、`ppa-image.json`，真实核心报告在 `.ppa/reports/letta-live.json`。本轮 Windows PTY 验证了连续聊天、文件批准与真实写入、流式中断以及安全退出；中断事件为 `cancelled`，输入未自动重发。本机 Qwen/llama.cpp 原始模型地址完成了文本和真实图片识别，模型正确识别验收图中的红环、蓝点和蓝色 PPA 字样；真实核心检查还覆盖人格与记忆召回、跨会话记忆增删改、文件与命令工具、严格拒绝、备份恢复以及恢复后 Agent ID/记忆关联。Ornith 的 `127.0.0.1:8000` 服务本轮未运行，因此没有把其历史结果计入本轮自有运行时验收。验收身份和文件位于隔离目录，不写入正式助手。上游终端命令不会自动透传到 PPA 界面，其他高级原生功能仍可通过维护入口访问。
 
 失败记录仍保留：Windows 文件授权通配规则未匹配曾导致工具被拒绝并超时，文件操作复测使用原生 acceptEdits 授权，正式入口仍为 standard。完全无输出的挂起模拟流曾未及时结束；已通过的流式中断测试不代表所有网络挂起情况。
 
-固定发布包的 sharp <0.35.0 被 npm audit 报告高危公告 GHSA-f88m-g3jw-g9cj。未擅自降级 Letta 或修改其依赖实现，不将当前测试结果解释为依赖安全审计通过。
+当前依赖树仍有一项 npm high severity 报告：运行时继承的 `sharp < 0.35.0`，npm 建议的 `0.35.4` 属于主版本升级，本次没有静默套用。运行时功能测试不等同于依赖安全审计通过。

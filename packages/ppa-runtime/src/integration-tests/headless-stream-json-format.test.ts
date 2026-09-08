@@ -1,0 +1,358 @@
+import { describe, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
+import { createAuthenticatedCliTestEnv } from "@/test-utils/test-process-env";
+import type {
+  ResultMessage,
+  StreamEvent,
+  SystemInitMessage,
+} from "@/types/protocol";
+import {
+  formatAttemptDiagnostics,
+  formatCapturedOutput,
+} from "./process-diagnostics";
+
+/**
+ * Tests for stream-json output format.
+ * These verify the message structure matches the wire format types.
+ */
+
+async function runHeadlessCommandOnce(
+  prompt: string,
+  extraArgs: string[] = [],
+  timeoutMs = 180000, // 180s timeout - CI can be very slow
+): Promise<{
+  lines: string[];
+  stdout: string;
+  stderr: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(
+      "bun",
+      [
+        "run",
+        "dev",
+        "--new-agent",
+        "--memfs-startup",
+        "skip",
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        "--yolo",
+        "-m",
+        "sonnet-4.6-low",
+        ...extraArgs,
+      ],
+      {
+        cwd: process.cwd(),
+        env: createAuthenticatedCliTestEnv(),
+      },
+    );
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    // Safety timeout for CI
+    const timeout = setTimeout(() => {
+      proc.kill();
+      reject(
+        new Error(
+          `Process timeout after ${timeoutMs}ms.\n${formatCapturedOutput({
+            stdout,
+            stderr,
+            extra: {
+              args: extraArgs.join(" "),
+              saw_result_event: stdout.includes('"type":"result"'),
+            },
+          })}`,
+        ),
+      );
+    }, timeoutMs);
+
+    proc.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code !== 0 && !stdout.includes('"type":"result"')) {
+        reject(
+          new Error(
+            `Process exited with code ${code}.\n${formatCapturedOutput({
+              stdout,
+              stderr,
+              extra: {
+                args: extraArgs.join(" "),
+                saw_result_event: stdout.includes('"type":"result"'),
+              },
+            })}`,
+          ),
+        );
+      } else {
+        // Parse line-delimited JSON
+        const lines = stdout
+          .split("\n")
+          .filter((line) => line.trim())
+          .filter((line) => {
+            try {
+              JSON.parse(line);
+              return true;
+            } catch {
+              return false;
+            }
+          });
+        resolve({ lines, stdout, stderr });
+      }
+    });
+  });
+}
+
+async function runHeadlessCommand(
+  prompt: string,
+  extraArgs: string[] = [],
+  timeoutMs = 180000,
+): Promise<string[]> {
+  const maxRetries = 1;
+  const failedAttempts: Array<{ attempt: number; message: string }> = [];
+
+  for (let attempt = 0; ; attempt += 1) {
+    const result = await runHeadlessCommandOnce(prompt, extraArgs, timeoutMs);
+    const hasResultLine = result.lines.some((line) => {
+      try {
+        const obj = JSON.parse(line);
+        return obj.type === "result";
+      } catch {
+        return false;
+      }
+    });
+
+    if (hasResultLine) {
+      return result.lines;
+    }
+
+    failedAttempts.push({
+      attempt: attempt + 1,
+      message: formatCapturedOutput({
+        stdout: result.stdout,
+        stderr: result.stderr,
+        extra: {
+          args: extraArgs.join(" ") || "(none)",
+          saw_result_event: result.stdout.includes('"type":"result"'),
+        },
+      }),
+    });
+
+    if (attempt >= maxRetries) {
+      throw new Error(
+        `Headless command completed without a result envelope after ${attempt + 1} attempt(s).\n${formatAttemptDiagnostics(
+          failedAttempts,
+        )}`,
+      );
+    }
+
+    console.warn(
+      `[headless-stream-json] retrying after missing result envelope (${attempt + 1}/${maxRetries})`,
+    );
+  }
+}
+
+// Prescriptive prompt to ensure single-step response without tool use
+const FAST_PROMPT =
+  "This is a test. Do not call any tools. Just respond with the word OK and nothing else.";
+
+// ISO 8601 UTC with ms precision + Z suffix (e.g. "2026-04-21T23:40:15.123Z").
+// Matches the format emitted by new Date().toISOString() and by Claude Code / Codex.
+const ISO_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+describe("stream-json format", () => {
+  test(
+    "init message has type 'system' with subtype 'init'",
+    async () => {
+      const lines = await runHeadlessCommand(FAST_PROMPT);
+      const initLine = lines.find((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "system" && obj.subtype === "init";
+      });
+
+      expect(initLine).toBeDefined();
+      if (!initLine) throw new Error("initLine not found");
+
+      const init = JSON.parse(initLine) as SystemInitMessage;
+      expect(init.type).toBe("system");
+      expect(init.subtype).toBe("init");
+      expect(init.agent_id).toBeDefined();
+      if (!init.agent_id) throw new Error("init agent_id not found");
+      expect(init.session_id).toBe(init.agent_id); // session_id should equal agent_id
+      expect(init.model).toBeDefined();
+      expect(init.tools).toBeInstanceOf(Array);
+      expect(init.cwd).toBeDefined();
+      expect(init.uuid).toBe(`init-${init.agent_id}`);
+      // Every emitted wire line must carry an ISO 8601 UTC timestamp.
+      expect(init.timestamp).toMatch(ISO_TIMESTAMP_REGEX);
+    },
+    { timeout: 200000 },
+  );
+
+  test(
+    "messages have session_id and uuid",
+    async () => {
+      const lines = await runHeadlessCommand(FAST_PROMPT);
+
+      // Find a message line
+      const messageLine = lines.find((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "message";
+      });
+
+      expect(messageLine).toBeDefined();
+      if (!messageLine) throw new Error("messageLine not found");
+
+      const msg = JSON.parse(messageLine) as {
+        session_id: string;
+        uuid: string;
+        timestamp: string;
+      };
+      expect(msg.session_id).toBeDefined();
+      expect(msg.uuid).toBeDefined();
+      // uuid should be otid or id from the Letta SDK chunk
+      expect(msg.uuid).toBeTruthy();
+      expect(msg.timestamp).toMatch(ISO_TIMESTAMP_REGEX);
+    },
+    { timeout: 200000 },
+  );
+
+  test(
+    "result message has correct format",
+    async () => {
+      const lines = await runHeadlessCommand(FAST_PROMPT);
+      const resultLine = lines.find((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "result";
+      });
+
+      expect(resultLine).toBeDefined();
+      if (!resultLine) throw new Error("resultLine not found");
+
+      const result = JSON.parse(resultLine) as ResultMessage & { uuid: string };
+      expect(result.type).toBe("result");
+      expect(result.subtype).toBe("success");
+      expect(result.session_id).toBeDefined();
+      expect(result.agent_id).toBeDefined();
+      if (!result.agent_id) throw new Error("result agent_id not found");
+      expect(result.session_id).toBe(result.agent_id);
+      expect(result.duration_ms).toBeGreaterThan(0);
+      expect(result.uuid).toContain("result-");
+      expect(result.result).toBeDefined();
+      // Result lines must also carry a wall-clock timestamp in addition
+      // to duration_ms (which is measured from turn start).
+      expect(result.timestamp).toMatch(ISO_TIMESTAMP_REGEX);
+    },
+    { timeout: 200000 },
+  );
+
+  test(
+    "--include-partial-messages wraps chunks in stream_event",
+    async () => {
+      const lines = await runHeadlessCommand(FAST_PROMPT, [
+        "--include-partial-messages",
+      ]);
+
+      const streamEventLines = lines.filter((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "stream_event";
+      });
+      const messageLines = lines.filter((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "message";
+      });
+
+      // In rare fast-response cases, the stream may emit only init + result and
+      // never surface partial chunks. If any streamed chunk payloads exist, they
+      // must be wrapped as stream_event rather than plain message lines.
+      if (streamEventLines.length > 0 || messageLines.length > 0) {
+        expect(streamEventLines.length).toBeGreaterThan(0);
+        expect(messageLines.length).toBe(0);
+      }
+
+      for (const line of streamEventLines) {
+        const event = JSON.parse(line) as StreamEvent;
+        expect(event.type).toBe("stream_event");
+        expect(event.event).toBeDefined();
+        expect(event.session_id).toBeDefined();
+        expect(event.uuid).toBeDefined();
+        expect(event.timestamp).toMatch(ISO_TIMESTAMP_REGEX);
+      }
+
+      const contentEvent = streamEventLines
+        .map((line) => JSON.parse(line) as StreamEvent)
+        .find((event) => "message_type" in event.event);
+      if (contentEvent) {
+        expect("message_type" in contentEvent.event).toBe(true);
+      }
+
+      const resultLine = lines.find((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "result";
+      });
+      expect(resultLine).toBeDefined();
+    },
+    { timeout: 200000 },
+  );
+
+  test(
+    "without --include-partial-messages, messages are type 'message'",
+    async () => {
+      const lines = await runHeadlessCommand(FAST_PROMPT);
+
+      // Should have message lines, not stream_event
+      const messageLines = lines.filter((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "message";
+      });
+
+      const streamEventLines = lines.filter((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "stream_event";
+      });
+
+      // We should have some message lines (reasoning, assistant, stop_reason, etc.)
+      // In rare cases with very fast responses, we might only get init + result
+      // So check that IF we have content, it's "message" not "stream_event"
+      if (messageLines.length > 0 || streamEventLines.length > 0) {
+        expect(messageLines.length).toBeGreaterThan(0);
+        expect(streamEventLines.length).toBe(0);
+      }
+
+      // Always should have a result
+      const resultLine = lines.find((line) => {
+        const obj = JSON.parse(line);
+        return obj.type === "result";
+      });
+      expect(resultLine).toBeDefined();
+    },
+    { timeout: 200000 },
+  );
+
+  test(
+    "every emitted line carries an ISO 8601 UTC timestamp",
+    async () => {
+      // Regression guard: if a new emit site is added in headless.ts that
+      // bypasses writeWireMessage, this test will catch it.
+      const lines = await runHeadlessCommand(FAST_PROMPT);
+      expect(lines.length).toBeGreaterThan(0);
+
+      for (const line of lines) {
+        const obj = JSON.parse(line) as { type: string; timestamp?: string };
+        expect(
+          obj.timestamp,
+          `message of type "${obj.type}" is missing a timestamp: ${line}`,
+        ).toMatch(ISO_TIMESTAMP_REGEX);
+      }
+    },
+    { timeout: 200000 },
+  );
+});

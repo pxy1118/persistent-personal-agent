@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { PpaSession, type MemoryDocument, type ToolApproval, type ChatMessage } from './ppa-session.js';
 import { permissionModes, permissionModeLabel, permissionModeDetail, cyclePermissionMode, type PermissionMode } from './permission-modes.js';
 import { acquireLock } from './lock.js';
-import { isLocalModelEndpoint, locations, readConfig, redact } from './letta-runtime.js';
+import { isLocalModelEndpoint, locations, readConfig, redact } from './ppa-runtime.js';
 import { readProfiles, selectProfile, writeActiveConfig } from './model-profiles.js';
 
 export function safeTerminal(text: string) { return redact(text).replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ''); }
@@ -181,7 +181,7 @@ export class PpaTerminal {
 export async function main() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('PPA 终端需要交互式终端，请运行 npm start 或 start.cmd。');
   const p = locations(); mkdirSync(p.data, { recursive: true });
-  if (!existsSync(p.manifest)) throw new Error('请先运行 npm run migrate:letta。');
+  if (!existsSync(p.manifest)) throw new Error('请先运行 npm run migrate:ppa。');
   const release = acquireLock(p.data); let session: PpaSession | undefined;
   try {
     process.stdout.write('\n  PPA · 正在连接你的助手…\n');

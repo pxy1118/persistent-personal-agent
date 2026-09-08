@@ -4,11 +4,10 @@ import { mkdirSync, existsSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
-import { createAppServerClient, type AppServerClient } from '@letta-ai/letta-code/app-server-client';
-import { agentFile, atomicJson, childEnv, cliPath, cliAsync, configureAgent, digest, json, modelApiKey, modelHandle, modelIds, readConfig, redact, version, type Locations, type LettaConfig } from './letta-runtime.js';
-import { startModelBridge, type ModelBridge } from './model-bridge.js';
+import { createAppServerClient, type AppServerClient } from '@ppa/runtime/app-server-client';
+import { agentFile, atomicJson, childEnv, cliPath, cliAsync, configureAgent, digest, json, modelApiKey, modelHandle, modelIds, readConfig, redact, version, upstreamVersion, type Locations, type LettaConfig } from './ppa-runtime.js';
 import { permissionModes, type PermissionMode } from './permission-modes.js';
-import { type Migration } from './letta-data.js';
+import { type Migration } from './ppa-data.js';
 import { captureScreen, screenToolDefinition, screenToolResult } from './screen-tool.js';
 
 export type ChatMessage = { id: string; role: 'user' | 'assistant'; text: string };
@@ -48,28 +47,22 @@ export class PpaSession extends EventEmitter {
   private finish?: () => void;
   private nativeUrl = '';
   private token = '';
-  private bridge?: ModelBridge;
   readonly stateFile: string;
   constructor(readonly paths: Locations) {
     super();
     const migration = json<Migration>(paths.manifest);
-    if (migration.status !== 'complete' || !migration.agentId) throw new Error('请先运行 npm run migrate:letta。');
+    if (migration.status !== 'complete' || !migration.agentId) throw new Error('请先运行 npm run migrate:ppa。');
     this.agentId = migration.agentId; agentFile(paths, this.agentId);
     this.stateFile = join(paths.data, 'ppa-terminal.json');
   }
   async start(config?: LettaConfig) {
     const p = this.paths, c = config ?? readConfig(p);
     this.config = c;
-    if (c.provider === 'llama-cpp' && c.modelBaseUrl) {
-      // llama.cpp discovery only learns vision through /props; the native /models
-      // probe short-circuits it. The bridge forces the /props path for the runtime.
-      this.bridge = await startModelBridge(c.modelBaseUrl);
-    }
     try { await modelIds(c); this.modelReady = true; } catch {
       // Offline inspection must not silently switch providers or recreate an agent.
       this.modelReady = false;
     }
-    if (this.modelReady) { await cliAsync(p, ['connect', c.provider, '--base-url', this.bridge?.baseUrl ?? c.modelBaseUrl, '--api-key', modelApiKey(c)]); configureAgent(p, this.agentId, c); }
+    if (this.modelReady) { await cliAsync(p, ['connect', c.provider, '--base-url', c.modelBaseUrl, '--api-key', modelApiKey(c)]); configureAgent(p, this.agentId, c); }
     mkdirSync(p.workspace, { recursive: true });
     mkdirSync(join(p.data, 'letta-home'), { recursive: true });
     this.token = randomBytes(32).toString('hex');
@@ -95,7 +88,7 @@ export class PpaSession extends EventEmitter {
       });
       this.client = await createAppServerClient({ url: this.nativeUrl, authToken: this.token, WebSocket, requestTimeoutMs: 45000 }).connect();
       const info = await this.client.info();
-      if (info.backend !== 'local' || info.letta_code_version !== version || info.protocol_version !== 1) throw new Error('后台版本或本地模式不匹配。');
+      if (info.backend !== 'local' || info.implementation !== 'ppa-runtime' || info.ppa_runtime_version !== version || info.upstream_letta_code_version !== upstreamVersion || info.protocol_version !== 1) throw new Error('后台版本或本地模式不匹配。');
       this.client.onMessage(m => this.receive(m));
       this.client.onExternalToolCall(async request => {
         if (request.tool_name !== screenToolDefinition.name) throw new Error(`未知的外部工具：${request.tool_name}`);
@@ -232,19 +225,13 @@ export class PpaSession extends EventEmitter {
   }
   async changeModel(c: LettaConfig, persist: (c: LettaConfig) => void) {
     this.requireIdle(); const ids = await modelIds(c), handle = modelHandle(c, c.modelId ?? ids[0]);
-    const previousBridge = this.bridge;
-    const nextBridge = c.provider === 'llama-cpp' ? await startModelBridge(c.modelBaseUrl) : undefined;
     try {
-      await this.request('connect_provider', { target: 'local', provider_id: c.provider, fields: { baseUrl: nextBridge?.baseUrl ?? c.modelBaseUrl, apiKey: modelApiKey(c) } });
+      await this.request('connect_provider', { target: 'local', provider_id: c.provider, fields: { baseUrl: c.modelBaseUrl, apiKey: modelApiKey(c) } });
       await this.request('agent_update', { agent_id: this.agentId, body: { model: handle, context_window_limit: c.contextWindow, max_tokens: c.maxTokens } });
       await this.request('update_model', { runtime: this.runtime, payload: { model_handle: handle } });
       if (this.runtime!.conversation_id !== 'default') await this.request('conversation_update', { conversation_id: this.runtime!.conversation_id, body: { context_window_limit: c.contextWindow, model_settings: { max_tokens: c.maxTokens } } });
-      atomicJson(this.paths.settings, c); persist(c); this.model = handle; this.config = c; this.modelReady = true; this.bridge = nextBridge;
-      if (previousBridge) previousBridge.close();
-    } catch (error) {
-      if (nextBridge) nextBridge.close();
-      throw error;
-    }
+      atomicJson(this.paths.settings, c); persist(c); this.model = handle; this.config = c; this.modelReady = true;
+    } catch (error) { throw error; }
   }
   /** Reattach persisted identity/conversation through a fresh owned runtime. */
   async restart(force = false) {
@@ -267,6 +254,5 @@ export class PpaSession extends EventEmitter {
     this.client?.close(); this.online = false;
     const child = this.child;
     if (child && child.exitCode === null && child.signalCode === null) { const closed = new Promise<void>(resolve => child.once('exit', () => resolve())); child.kill(); await waitAtMost(closed, 5000); if (child.exitCode === null && child.signalCode === null) throw new Error('后台仍在退出，保留实例锁以防并发启动。'); }
-    if (this.bridge) { try { this.bridge.close(); } catch { /* Already closed by a failed startup. */ } this.bridge = undefined; }
   }
 }

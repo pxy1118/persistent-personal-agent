@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { PpaSession, type ToolApproval, type ImageInput } from '../src/ppa-session.js';
-import { locations, root, cliAsync, atomicJson, configureAgent } from '../src/letta-runtime.js';
+import { locations, root, cliAsync, atomicJson, configureAgent } from '../src/ppa-runtime.js';
 
 const p = locations(join(root, '.ppa', `ppa-interface-test-${Date.now()}`)); mkdirSync(p.workspace, { recursive: true });
 const report: any = { status: 'RUNNING', data: p.data, checks: [] };
@@ -40,6 +40,7 @@ try {
   const a = JSON.parse(await cliAsync(p, ['agents','create','--name','PPA测试','--personality','blank','--model','llama.cpp/fixture']));
   atomicJson(p.manifest, { version: 1, status: 'complete', agentId: a.id }); configureAgent(p, a.id, c, 'fixture');
   session = new PpaSession(p); await session.start(c); pass('native_runtime_local_start');
+  const runtimePid = session.child!.pid;
   let streamed = ''; session.on('text', t => { streamed += t; });
   const turn = async (input: string, images?: ImageInput[]) => {
     const finished = once(session!, 'done'); timeout = setTimeout(() => { void session!.stop(); }, 20000);
@@ -60,6 +61,7 @@ try {
   mode='screen';count=0;await turn('看看我的屏幕'); assert.equal(sawScreenTool,true); assert.equal(sawScreenImage,true); assert.equal(screenApproval,false); pass('screen_tool_runs_without_separate_approval');
   mode='allow';count=0;await turn('写入测试文件'); assert.equal(readFileSync(join(p.workspace,'allow.txt'),'utf8'),'PPA_NATIVE_WRITE'); pass('approve_real_file_tool');
   mode='deny';count=0;await turn('拒绝测试文件'); assert.equal(existsSync(join(p.workspace,'deny.txt')),false); pass('deny_real_file_tool');
+  assert.equal(session.child!.pid, runtimePid); pass('consecutive_turns_reuse_runtime_after_cleanup');
   const untilMode = async (want: 'standard' | 'acceptEdits' | 'unrestricted' | 'strict', label: string) => {
     for (let i = 0; i < 50 && session!.mode !== want; i++) await new Promise(r => setTimeout(r, 100));
     assert.equal(session!.mode, want, label);

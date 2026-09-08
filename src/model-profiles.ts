@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { atomicJson, json, normalizeConfig, root, type LettaConfig } from './letta-runtime.js';
+import { atomicJson, json, normalizeConfig, root, type LettaConfig } from './ppa-runtime.js';
 
 export type ModelProfile = LettaConfig;
 

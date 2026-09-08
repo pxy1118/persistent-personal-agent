@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "explanation": {
+      "type": "string",
+      "description": "Optional explanation for this plan update."
+    },
+    "plan": {
+      "type": "array",
+      "description": "The list of steps",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "description": "Task step text."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed"],
+            "description": "Step status."
+          }
+        },
+        "required": ["step", "status"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["plan"],
+  "additionalProperties": false
+}

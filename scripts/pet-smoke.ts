@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { root, locations, readConfig, cliAsync, configureAgent, atomicJson, modelIds, modelHandle, type LettaConfig } from '../src/letta-runtime.js';
+import { root, locations, readConfig, cliAsync, configureAgent, atomicJson, modelIds, modelHandle, type LettaConfig } from '../src/ppa-runtime.js';
 
 const live=process.argv.includes('--live');
 const p=locations(join(root,'.ppa',`pet-${live?'live':'integration'}-${Date.now()}`));

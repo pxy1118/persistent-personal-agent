@@ -1,0 +1,698 @@
+/**
+ * Pure, framework-agnostic policy helpers for turn-level recovery.
+ *
+ * Both TUI (App.tsx) and headless (headless.ts) consume these helpers
+ * so that identical conflict inputs always produce the same recovery
+ * action. No network calls, no React, no stream-json output.
+ */
+
+import { randomUUID } from "node:crypto";
+import type { MessageCreate } from "@letta-ai/letta-client/resources/agents/agents";
+import type { ApprovalCreate } from "@letta-ai/letta-client/resources/agents/messages";
+import { isCloudflareEdge52xErrorText } from "@/cli/helpers/error-formatter";
+import { isZaiNonRetryableError } from "@/cli/helpers/zai-errors";
+import type { StopReasonType } from "@/types/protocol_v2";
+
+// ── Error fragment constants ────────────────────────────────────────
+
+const INVALID_TOOL_CALL_IDS_FRAGMENT = "invalid tool call ids";
+const APPROVAL_PENDING_DETAIL_FRAGMENT = "waiting for approval";
+const CONVERSATION_BUSY_DETAIL_FRAGMENTS = [
+  "is currently being processed",
+  "busy with another active run",
+];
+const CONVERSATION_BUSY_RUN_ID_PATTERN = /\brun_id=([A-Za-z0-9_-]+)/i;
+const EMPTY_RESPONSE_DETAIL_FRAGMENT = "empty content in";
+const RETRYABLE_PROVIDER_DETAIL_PATTERNS = [
+  "Anthropic API error",
+  "OpenAI API error",
+  "Google Vertex API error",
+  "ChatGPT API error",
+  "ChatGPT server error",
+  "Connection error during Anthropic streaming",
+  "Connection error during OpenRouter streaming",
+  "Connection error during streaming",
+  "upstream connect error",
+  "connection termination",
+  "peer closed connection",
+  "incomplete chunked read",
+  "Network error",
+  "Connection error",
+  "Request timed out",
+  "overloaded",
+  "api_error",
+  "server_error",
+  "server error",
+  "internal_error",
+  "internal error",
+  "service_unavailable",
+  "service unavailable",
+  "You can retry your request",
+  "retry your request",
+  "WebSocket closed",
+  "websocket closed",
+  "WebSocket error",
+  "websocket error",
+  "Connection ended",
+  "connection ended",
+  "connection lost",
+  "other side closed",
+  "fetch failed",
+  "socket hang up",
+  "ended without",
+  "http2 request did not get a response",
+  "terminated",
+];
+const NON_RETRYABLE_PROVIDER_DETAIL_PATTERNS = [
+  "invalid api key",
+  "incorrect api key",
+  "authentication error",
+  "authentication failed",
+  "unauthorized",
+  "permission denied",
+  "forbidden",
+  "invalid_request_error",
+  "invalid model",
+  "model_not_found",
+  "context_length_exceeded",
+  "invalid_encrypted_content",
+];
+const NON_RETRYABLE_RUN_ERROR_TYPES = [
+  "llm_authentication",
+  "llm_bad_request",
+  "llm_insufficient_credits",
+  "llm_permission_denied",
+  "llm_not_found",
+  "llm_unprocessable_entity",
+];
+const NON_RETRYABLE_429_REASONS = [
+  "agents-limit-exceeded",
+  "exceeded-quota",
+  "free-usage-exceeded",
+  "premium-usage-exceeded",
+  "standard-usage-exceeded",
+  "basic-usage-exceeded",
+  "not-enough-credits",
+];
+const NON_RETRYABLE_QUOTA_DETAIL_PATTERNS = [
+  "hosted model usage limit",
+  "out of credits",
+  "usage_limit_reached",
+];
+const NON_RETRYABLE_4XX_PATTERN = /Error code:\s*4(0[0-8]|1\d|2\d|3\d|4\d|51)/i;
+const RETRYABLE_429_PATTERN = /Error code:\s*429|rate limit|too many requests/i;
+const DEFAULT_TRANSIENT_RETRY_BASE_DELAY_MS = 1000;
+const CLOUDFLARE_EDGE_52X_RETRY_BASE_DELAY_MS = 5000;
+const CONVERSATION_BUSY_RETRY_BASE_DELAY_MS = 10000;
+const EMPTY_RESPONSE_RETRY_BASE_DELAY_MS = 500;
+
+function isCloudflareEdge52xDetail(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  return isCloudflareEdge52xErrorText(detail);
+}
+
+/**
+ * Explicit classifier for quota-limit style errors that should not use
+ * transient retry logic. Used by client-side fallback paths.
+ */
+export function isQuotaLimitErrorDetail(detail: unknown): boolean {
+  return hasNonRetryableQuotaDetail(detail);
+}
+
+function hasNonRetryableQuotaDetail(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  const normalized = detail.toLowerCase();
+  return (
+    NON_RETRYABLE_429_REASONS.some((reason) => normalized.includes(reason)) ||
+    NON_RETRYABLE_QUOTA_DETAIL_PATTERNS.some((pattern) =>
+      normalized.includes(pattern),
+    )
+  );
+}
+
+function isNonRetryableRunErrorType(errorType: unknown): boolean {
+  return (
+    typeof errorType === "string" &&
+    NON_RETRYABLE_RUN_ERROR_TYPES.includes(errorType)
+  );
+}
+
+// ── Classifiers ─────────────────────────────────────────────────────
+
+/** Tool call IDs don't match what the server expects. */
+export function isInvalidToolCallIdsError(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  return detail.toLowerCase().includes(INVALID_TOOL_CALL_IDS_FRAGMENT);
+}
+
+/** Backend has a pending approval blocking new messages. */
+export function isApprovalPendingError(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  return detail.toLowerCase().includes(APPROVAL_PENDING_DETAIL_FRAGMENT);
+}
+
+/** Conversation is busy (another request is being processed). */
+export function isConversationBusyError(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  const normalized = detail.toLowerCase();
+  return CONVERSATION_BUSY_DETAIL_FRAGMENTS.some((fragment) =>
+    normalized.includes(fragment),
+  );
+}
+
+/** Extract the server-reported blocking run id from a conversation-busy error. */
+export function extractConversationBusyRunId(detail: unknown): string | null {
+  if (typeof detail !== "string" || !isConversationBusyError(detail)) {
+    return null;
+  }
+
+  return detail.match(CONVERSATION_BUSY_RUN_ID_PATTERN)?.[1] ?? null;
+}
+
+/**
+ * LLM returned an empty response (no content and no tool calls).
+ * This can happen with models like Opus 4.6 that occasionally return empty content.
+ * These are retryable with a cache-busting system message modification.
+ */
+export function isEmptyResponseError(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  return detail.toLowerCase().includes(EMPTY_RESPONSE_DETAIL_FRAGMENT);
+}
+
+/** Transient provider/network detail that is usually safe to retry. */
+export function isRetryableProviderErrorDetail(detail: unknown): boolean {
+  if (isCloudflareEdge52xDetail(detail)) return true;
+  if (typeof detail !== "string") return false;
+  return RETRYABLE_PROVIDER_DETAIL_PATTERNS.some((pattern) =>
+    detail.includes(pattern),
+  );
+}
+
+/** Non-transient auth/validation style provider detail that should not be retried. */
+export function isNonRetryableProviderErrorDetail(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  if (isZaiNonRetryableError(detail)) return true;
+  const normalized = detail.toLowerCase();
+  if (NON_RETRYABLE_4XX_PATTERN.test(detail)) return true;
+  return NON_RETRYABLE_PROVIDER_DETAIL_PATTERNS.some((pattern) =>
+    normalized.includes(pattern),
+  );
+}
+
+/** Retry decision for run-metadata fallback classification. */
+export function shouldRetryRunMetadataError(
+  errorType: unknown,
+  detail: unknown,
+): boolean {
+  const explicitLlmError = errorType === "llm_error";
+  const nonRetryableErrorType = isNonRetryableRunErrorType(errorType);
+  const nonRetryableQuotaDetail = hasNonRetryableQuotaDetail(detail);
+  const retryable429Detail =
+    typeof detail === "string" && RETRYABLE_429_PATTERN.test(detail);
+  const retryableDetail = isRetryableProviderErrorDetail(detail);
+  const nonRetryableDetail = isNonRetryableProviderErrorDetail(detail);
+
+  if (nonRetryableErrorType) return false;
+  if (nonRetryableQuotaDetail) return false;
+  if (nonRetryableDetail && !retryable429Detail) return false;
+  if (explicitLlmError) return true;
+  return retryable429Detail || retryableDetail;
+}
+
+export function shouldRetryPostStreamRunError(opts: {
+  stopReason: StopReasonType;
+  errorType?: unknown;
+  detail?: unknown;
+  retryable?: boolean;
+}): boolean {
+  if (opts.retryable === false) return false;
+  if (opts.retryable === true) return true;
+  if (shouldRetryRunMetadataError(opts.errorType, opts.detail)) return true;
+  if (opts.stopReason !== "llm_api_error") return false;
+  if (isNonRetryableRunErrorType(opts.errorType)) return false;
+  if (hasNonRetryableQuotaDetail(opts.detail)) return false;
+  if (isNonRetryableProviderErrorDetail(opts.detail)) return false;
+
+  // The backend uses llm_api_error for provider failures. If it did not attach
+  // a recognized non-retryable signal, preserve the legacy transient retry.
+  return true;
+}
+
+export function normalizeStreamErrorTypeToStopReason(
+  errorType: unknown,
+): StopReasonType {
+  if (errorType === "llm_error" || errorType === "llm_api_error") {
+    return "llm_api_error";
+  }
+
+  if (errorType === "internal_error" || errorType === "stream_incomplete") {
+    return "error";
+  }
+
+  return "error";
+}
+
+/**
+ * Check if this is an empty response error that should be retried.
+ *
+ * Empty responses from models like Opus 4.6 are retryable. The caller
+ * decides whether to retry with the same input or append a system
+ * reminder nudge (typically on the last attempt).
+ */
+export function isEmptyResponseRetryable(
+  errorType: unknown,
+  detail: unknown,
+  emptyResponseRetries: number,
+  maxEmptyResponseRetries: number,
+): boolean {
+  if (emptyResponseRetries >= maxEmptyResponseRetries) return false;
+  if (errorType !== "llm_error") return false;
+  return isEmptyResponseError(detail);
+}
+
+/** Retry decision for pre-stream send failures before any chunks are yielded. */
+export function shouldRetryPreStreamTransientError(opts: {
+  status: number | undefined;
+  detail: unknown;
+}): boolean {
+  const { status, detail } = opts;
+  if (hasNonRetryableQuotaDetail(detail)) return false;
+
+  if (status === 429) {
+    return true;
+  }
+  if (status !== undefined && status >= 500) return true;
+  if (status !== undefined && status >= 400) return false;
+
+  const retryable429Detail =
+    typeof detail === "string" && RETRYABLE_429_PATTERN.test(detail);
+  if (retryable429Detail) return true;
+  if (isNonRetryableProviderErrorDetail(detail)) return false;
+  return isRetryableProviderErrorDetail(detail);
+}
+
+/** Parse Retry-After header to milliseconds (seconds or HTTP-date forms). */
+export function parseRetryAfterHeaderMs(
+  retryAfterValue: string | null | undefined,
+): number | null {
+  if (!retryAfterValue) return null;
+
+  const seconds = Number(retryAfterValue);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+
+  const retryAtMs = Date.parse(retryAfterValue);
+  if (Number.isNaN(retryAtMs)) return null;
+
+  const delayMs = retryAtMs - Date.now();
+  return delayMs > 0 ? delayMs : 0;
+}
+
+export type RetryDelayCategory =
+  | "transient_provider"
+  | "conversation_busy"
+  | "empty_response";
+
+/**
+ * Compute retry delay for known retry classes.
+ * - `transient_provider`: exponential (Cloudflare-specific base) with Retry-After override
+ * - `conversation_busy`: exponential
+ * - `empty_response`: linear
+ */
+export function getRetryDelayMs(opts: {
+  category: RetryDelayCategory;
+  attempt: number;
+  detail?: unknown;
+  retryAfterMs?: number | null;
+}): number {
+  const { category, attempt, detail, retryAfterMs = null } = opts;
+
+  if (category === "transient_provider") {
+    if (retryAfterMs !== null) return retryAfterMs;
+    const baseDelayMs = isCloudflareEdge52xDetail(detail)
+      ? CLOUDFLARE_EDGE_52X_RETRY_BASE_DELAY_MS
+      : DEFAULT_TRANSIENT_RETRY_BASE_DELAY_MS;
+    return baseDelayMs * 2 ** (attempt - 1);
+  }
+
+  if (category === "conversation_busy") {
+    return CONVERSATION_BUSY_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+  }
+
+  return EMPTY_RESPONSE_RETRY_BASE_DELAY_MS * attempt;
+}
+
+/**
+ * Backward-compatible wrapper for transient provider retries.
+ */
+export function getTransientRetryDelayMs(opts: {
+  attempt: number;
+  detail: unknown;
+  retryAfterMs?: number | null;
+}): number {
+  return getRetryDelayMs({
+    category: "transient_provider",
+    attempt: opts.attempt,
+    detail: opts.detail,
+    retryAfterMs: opts.retryAfterMs,
+  });
+}
+
+// ── Pre-stream conflict routing ─────────────────────────────────────
+
+export type PreStreamConflictKind =
+  | "approval_pending"
+  | "conversation_busy"
+  | null;
+
+export type PreStreamErrorAction =
+  | "resolve_approval_pending"
+  | "retry_conversation_busy"
+  | "retry_transient"
+  | "rethrow";
+
+export interface PreStreamErrorOptions {
+  status?: number;
+  transientRetries?: number;
+  maxTransientRetries?: number;
+}
+
+/** Classify a pre-stream 409 conflict detail string. */
+export function classifyPreStreamConflict(
+  detail: unknown,
+): PreStreamConflictKind {
+  if (isApprovalPendingError(detail)) return "approval_pending";
+  if (isConversationBusyError(detail)) return "conversation_busy";
+  return null;
+}
+
+/** Determine the recovery action for a pre-stream 409 error. */
+export function getPreStreamErrorAction(
+  detail: unknown,
+  conversationBusyRetries: number,
+  maxConversationBusyRetries: number,
+  opts?: PreStreamErrorOptions,
+): PreStreamErrorAction {
+  const kind = classifyPreStreamConflict(detail);
+
+  if (kind === "approval_pending") {
+    return "resolve_approval_pending";
+  }
+
+  if (
+    kind === "conversation_busy" &&
+    conversationBusyRetries < maxConversationBusyRetries
+  ) {
+    return "retry_conversation_busy";
+  }
+
+  if (
+    opts &&
+    shouldRetryPreStreamTransientError({ status: opts.status, detail }) &&
+    (opts.transientRetries ?? 0) < (opts.maxTransientRetries ?? 0)
+  ) {
+    return "retry_transient";
+  }
+
+  return "rethrow";
+}
+
+// ── Error text extraction ───────────────────────────────────────────
+
+/**
+ * Extract error detail string from a pre-stream APIError's nested body.
+ *
+ * Handles the common SDK error shapes:
+ * - Nested: `e.error.error.detail` → `e.error.error.message`
+ * - Direct: `e.error.detail` → `e.error.message`
+ * - Error: `e.message`
+ *
+ * Checks `detail` first (specific) then `message` (generic) at each level.
+ */
+export function extractConflictDetail(error: unknown): string {
+  if (error && typeof error === "object" && "error" in error) {
+    const errObj = (error as Record<string, unknown>).error;
+    if (typeof errObj === "string") return errObj;
+    if (errObj && typeof errObj === "object") {
+      const outer = errObj as Record<string, unknown>;
+      // Nested: e.error.error.detail → e.error.error.message
+      if (outer.error && typeof outer.error === "object") {
+        const nested = outer.error as Record<string, unknown>;
+        if (typeof nested.detail === "string") return nested.detail;
+        if (typeof nested.message === "string") return nested.message;
+      }
+      // String body: e.error.error (e.g. { error: "Conversation is busy..." })
+      if (typeof outer.error === "string") return outer.error;
+      // Direct: e.error.detail → e.error.message
+      if (typeof outer.detail === "string") return outer.detail;
+      if (typeof outer.message === "string") return outer.message;
+    }
+  }
+  if (error instanceof Error) return error.message;
+  return "";
+}
+
+// ── Approval payload rebuild ────────────────────────────────────────
+
+export interface PendingApprovalInfo {
+  toolCallId: string;
+  toolName: string;
+  toolArgs: string;
+}
+
+export const STALE_APPROVAL_RECOVERY_DENIAL_REASON =
+  "The agent harness automatically closed this stale pending tool call to recover from a client/server state desync: the server was still waiting on a result for it, but the harness had no matching tool execution in flight and no result was ever recorded. It was not denied by the user or a permissions policy. Re-issue the tool call if you still need it.";
+
+export function buildFreshDenialApprovals(
+  serverApprovals: PendingApprovalInfo[],
+  denialReason: string,
+): NonNullable<ApprovalCreate["approvals"]> {
+  return serverApprovals.map((approval) => ({
+    type: "approval" as const,
+    tool_call_id: approval.toolCallId,
+    approve: false,
+    reason: denialReason,
+  }));
+}
+
+/**
+ * Post-stop retries create a new request/run and must not reuse OTIDs.
+ */
+export function refreshInputOtidsForNewRequest<
+  T extends MessageCreate | ApprovalCreate,
+>(currentInput: T[]): T[] {
+  return currentInput.map((item) => ({
+    ...item,
+    otid: randomUUID(),
+  })) as T[];
+}
+
+/**
+ * Strip stale approval payloads from the message input array and optionally
+ * prepend fresh denial results for the actual pending approvals from the server.
+ */
+export function rebuildInputWithFreshDenials(
+  currentInput: Array<MessageCreate | ApprovalCreate>,
+  serverApprovals: PendingApprovalInfo[],
+  denialReason: string,
+): Array<MessageCreate | ApprovalCreate> {
+  const stripped = refreshInputOtidsForNewRequest(
+    currentInput.filter((item) => item?.type !== "approval"),
+  );
+
+  if (serverApprovals.length > 0) {
+    const denials: ApprovalCreate = {
+      type: "approval",
+      approvals: buildFreshDenialApprovals(serverApprovals, denialReason),
+      otid: randomUUID(),
+    };
+    return [denials, ...stripped];
+  }
+
+  return stripped;
+}
+
+// ── Retry gating ────────────────────────────────────────────────────
+
+/**
+ * Decide whether an approval-pending recovery attempt should proceed.
+ * Centralizes the retry-budget check used by both TUI and headless.
+ */
+export function shouldAttemptApprovalRecovery(opts: {
+  approvalPendingDetected: boolean;
+  retries: number;
+  maxRetries: number;
+}): boolean {
+  return opts.approvalPendingDetected && opts.retries < opts.maxRetries;
+}
+
+// ── ChatGPT plan quota rotation ─────────────────────────────────────
+
+const CHATGPT_USAGE_LIMIT_FRAGMENT = "usage_limit_reached";
+const CHATGPT_OAUTH_PROVIDER_TYPE = "chatgpt_oauth";
+const BYOK_PROVIDER_CATEGORY = "byok";
+
+export interface ChatGPTUsageLimitDetail {
+  planType: string | null;
+  /** Absolute reset time in ms since epoch, when the server reported one. */
+  resetsAt: number | null;
+}
+
+export interface ChatGPTUsageLimitErrorInput {
+  message?: unknown;
+  detail?: unknown;
+  errorCode?: unknown;
+  error_code?: unknown;
+  raw?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUsageLimitCode(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    value.toLowerCase() === CHATGPT_USAGE_LIMIT_FRAGMENT
+  );
+}
+
+function parseUsageLimitRecord(value: unknown): ChatGPTUsageLimitDetail | null {
+  if (!isRecord(value)) return null;
+
+  const errorObj = isRecord(value.error) ? value.error : value;
+  if (
+    !isUsageLimitCode(errorObj.type) &&
+    !isUsageLimitCode(errorObj.errorCode) &&
+    !isUsageLimitCode(errorObj.error_code)
+  ) {
+    return null;
+  }
+
+  const planType =
+    typeof errorObj.plan_type === "string" && errorObj.plan_type.length > 0
+      ? errorObj.plan_type
+      : null;
+
+  let resetsAt: number | null = null;
+  if (typeof errorObj.resets_at === "number" && errorObj.resets_at > 0) {
+    resetsAt = errorObj.resets_at * 1000;
+  } else if (
+    typeof errorObj.resets_in_seconds === "number" &&
+    errorObj.resets_in_seconds > 0
+  ) {
+    resetsAt = Date.now() + errorObj.resets_in_seconds * 1000;
+  }
+
+  return { planType, resetsAt };
+}
+
+function parseUsageLimitString(value: unknown): ChatGPTUsageLimitDetail | null {
+  if (typeof value !== "string") return null;
+  if (!value.toLowerCase().includes(CHATGPT_USAGE_LIMIT_FRAGMENT)) return null;
+
+  const fallback: ChatGPTUsageLimitDetail = { planType: null, resetsAt: null };
+  const jsonStart = value.indexOf("{");
+  const jsonEnd = value.lastIndexOf("}");
+  if (jsonStart === -1 || jsonEnd <= jsonStart) return fallback;
+
+  try {
+    return (
+      parseUsageLimitRecord(JSON.parse(value.slice(jsonStart, jsonEnd + 1))) ??
+      fallback
+    );
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Parse a ChatGPT usage-limit error from the structured Cloud error event or
+ * from the older embedded-JSON detail string. Reset fields are best-effort.
+ */
+export function parseChatGPTUsageLimitDetail(
+  error: unknown,
+): ChatGPTUsageLimitDetail | null {
+  const stringDetail = parseUsageLimitString(error);
+  if (stringDetail) return stringDetail;
+  if (!isRecord(error)) return null;
+
+  const structured = error as ChatGPTUsageLimitErrorInput;
+  const rawDetail =
+    parseUsageLimitRecord(structured.raw) ??
+    parseUsageLimitString(structured.raw);
+  if (rawDetail) return rawDetail;
+
+  const detail = parseUsageLimitString(structured.detail);
+  if (detail) return detail;
+  const message = parseUsageLimitString(structured.message);
+  if (message) return message;
+
+  if (
+    isUsageLimitCode(structured.errorCode) ||
+    isUsageLimitCode(structured.error_code)
+  ) {
+    return { planType: null, resetsAt: null };
+  }
+
+  return null;
+}
+
+export interface ChatGPTFailoverModelEntry {
+  handle: string;
+  providerType?: string;
+  providerCategory?: string;
+}
+
+function isChatGPTByokModel(model: ChatGPTFailoverModelEntry): boolean {
+  return (
+    model.providerType === CHATGPT_OAUTH_PROVIDER_TYPE &&
+    model.providerCategory === BYOK_PROVIDER_CATEGORY
+  );
+}
+
+/**
+ * Pick a sibling ChatGPT plan handle to fail over to when the current plan
+ * hits its usage limit. The current handle must itself resolve to a
+ * chatgpt_oauth BYOK model in `models` (otherwise returns null). Siblings
+ * share the same model suffix (after the first `/`) under a different
+ * provider prefix, are chatgpt_oauth + byok, and are not in
+ * `exhaustedProviders`. One sibling is chosen uniformly at random.
+ */
+export function selectChatGPTQuotaFailoverHandle(params: {
+  currentHandle: string;
+  models: ChatGPTFailoverModelEntry[];
+  exhaustedProviders: ReadonlySet<string>;
+  random?: () => number;
+}): string | null {
+  const { currentHandle, models, exhaustedProviders } = params;
+  const random = params.random ?? Math.random;
+
+  const slashIndex = currentHandle.indexOf("/");
+  if (slashIndex <= 0) return null;
+  const currentProvider = currentHandle.slice(0, slashIndex);
+  const modelSuffix = currentHandle.slice(slashIndex + 1);
+  if (!modelSuffix) return null;
+
+  const currentEntry = models.find((m) => m.handle === currentHandle);
+  if (!currentEntry || !isChatGPTByokModel(currentEntry)) return null;
+
+  const candidates = models.filter((m) => {
+    if (!isChatGPTByokModel(m)) return false;
+    const idx = m.handle.indexOf("/");
+    if (idx <= 0) return false;
+    const provider = m.handle.slice(0, idx);
+    if (provider === currentProvider) return false;
+    if (exhaustedProviders.has(provider)) return false;
+    return m.handle.slice(idx + 1) === modelSuffix;
+  });
+
+  if (candidates.length === 0) return null;
+
+  const index = Math.min(
+    Math.floor(random() * candidates.length),
+    candidates.length - 1,
+  );
+  return candidates[index]?.handle ?? null;
+}

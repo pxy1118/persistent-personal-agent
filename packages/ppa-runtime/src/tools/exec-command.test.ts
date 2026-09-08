@@ -1,0 +1,401 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  __clearExecSessionsForTests,
+  exec_command,
+  write_stdin,
+} from "@/tools/impl/exec-command";
+import {
+  __resetBackgroundRetentionConfigForTests,
+  backgroundProcesses,
+} from "@/tools/impl/process_manager";
+
+const isWindows = process.platform === "win32";
+
+function deleteOverflowFiles(output: string): void {
+  for (const match of output.matchAll(
+    /\[Full output written to: (.+?\.txt)\]/g,
+  )) {
+    const filePath = match[1];
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  }
+}
+
+describe.skipIf(isWindows)("Codex unified exec tools", () => {
+  beforeEach(() => {
+    __resetBackgroundRetentionConfigForTests();
+  });
+
+  afterEach(() => {
+    const outputFiles = Array.from(backgroundProcesses.values())
+      .map((proc) => proc.outputFile)
+      .filter((filePath): filePath is string => Boolean(filePath));
+
+    for (const proc of backgroundProcesses.values()) {
+      try {
+        proc.process.kill("SIGTERM");
+      } catch {
+        // Ignore cleanup failures for already-exited processes.
+      }
+    }
+    backgroundProcesses.clear();
+    __clearExecSessionsForTests();
+    __resetBackgroundRetentionConfigForTests();
+
+    for (const outputFile of outputFiles) {
+      if (fs.existsSync(outputFile)) {
+        fs.rmSync(outputFile, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test("formats completed command output like Codex unified exec", async () => {
+    const result = await exec_command({ cmd: "printf 'hello'" });
+
+    expect(result.output).toMatch(/Chunk ID: [0-9a-f]{6}/);
+    expect(result.output).toContain("Wall time:");
+    expect(result.output).toContain("Process exited with code 0");
+    expect(result.output).toContain("Original token count:");
+    expect(result.output).toContain("Output:\nhello");
+    expect(result.output).not.toContain("Process running with session ID");
+  });
+
+  test("redacts split invocation secrets from output and transcript files", async () => {
+    const secret = "he$$o";
+    const result = await exec_command({
+      cmd: "node -e \"const value = process.env.PASSWORD ?? ''; process.stdout.write(value.slice(0, 2)); setTimeout(() => process.stdout.write(value.slice(2)), 25)\"",
+      secretEnv: { PASSWORD: secret },
+    });
+
+    expect(result.output).toContain("PASSWORD=<REDACTED>");
+    expect(result.output).not.toContain(secret);
+    const outputFile = Array.from(backgroundProcesses.values()).at(
+      -1,
+    )?.outputFile;
+    expect(fs.readFileSync(outputFile as string, "utf8")).not.toContain(secret);
+  });
+
+  test("scrubs invocation secrets before writing overflow output", async () => {
+    const secret = "he$$o";
+    const result = await exec_command({
+      cmd: "node -e \"process.stdout.write((process.env.PASSWORD ?? '') + 'x'.repeat(50000))\"",
+      secretEnv: { PASSWORD: secret },
+      max_output_tokens: 80_000,
+    });
+
+    const overflowPath = result.output.match(
+      /\[Full output written to: (.+?\.txt)\]/,
+    )?.[1];
+    expect(overflowPath).toBeString();
+    const overflow = fs.readFileSync(overflowPath as string, "utf8");
+    expect(overflow).toContain("PASSWORD=<REDACTED>");
+    expect(overflow).not.toContain(secret);
+    deleteOverflowFiles(result.output);
+  });
+
+  test("caps exec_command inline output when max_output_tokens is too large", async () => {
+    const result = await exec_command({
+      cmd: "node -e \"process.stdout.write('x'.repeat(50000))\"",
+      max_output_tokens: 80_000,
+    });
+
+    try {
+      expect(result.output).toContain("Process exited with code 0");
+      expect(result.output).toContain(
+        "[Output truncated: showing 30,000 of 50,000 characters.]",
+      );
+      expect(result.output).toContain("[Full output written to:");
+      expect(result.output.length).toBeLessThan(35_000);
+
+      const match = result.output.match(
+        /\[Full output written to: (.+?\.txt)\]/,
+      );
+      expect(match?.[1]).toBeDefined();
+      const overflowPath = match?.[1];
+      if (!overflowPath) {
+        throw new Error("expected overflow path");
+      }
+      expect(fs.existsSync(overflowPath)).toBe(true);
+      expect(fs.readFileSync(overflowPath, "utf-8")).toBe("x".repeat(50_000));
+    } finally {
+      deleteOverflowFiles(result.output);
+    }
+  });
+
+  test("falls back to available Windows PowerShell when pwsh is unavailable", async () => {
+    const tempDir = fs.mkdtempSync(join(tmpdir(), "letta-exec-win-shell-"));
+    const fakePowerShell = join(tempDir, "powershell");
+    fs.writeFileSync(fakePowerShell, "#!/bin/sh\nprintf fake-powershell\n");
+    fs.chmodSync(fakePowerShell, 0o755);
+
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      process,
+      "platform",
+    );
+    const originalPath = process.env.PATH;
+    const originalPathext = process.env.PATHEXT;
+
+    Object.defineProperty(process, "platform", { value: "win32" });
+    process.env.PATH = tempDir;
+    delete process.env.PATHEXT;
+
+    try {
+      const result = await exec_command({ cmd: "ignored" });
+
+      expect(result.output).toContain("Process exited with code 0");
+      expect(result.output).toContain("Output:\nfake-powershell");
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, "platform", originalPlatform);
+      }
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      if (originalPathext === undefined) delete process.env.PATHEXT;
+      else process.env.PATHEXT = originalPathext;
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("returns session id for running command and write_stdin polls it", async () => {
+    const runtimeScope = { agentId: "agent-1", conversationId: "conv-1" };
+    const first = await exec_command({
+      cmd: "printf start; sleep 0.5; printf done",
+      yield_time_ms: 250,
+      parentScope: runtimeScope,
+    });
+
+    const match = first.output.match(/Process running with session ID (\d+)/);
+    expect(match?.[1]).toBeDefined();
+    expect(first.output).toContain("Output:\nstart");
+    expect(backgroundProcesses.get(match?.[1] ?? "")?.runtimeScope).toEqual(
+      runtimeScope,
+    );
+
+    const second = await write_stdin({
+      session_id: Number(match?.[1]),
+      chars: "",
+      yield_time_ms: 1000,
+    });
+
+    expect(second.output).toContain("Process exited with code 0");
+    expect(second.output).toContain("Output:\ndone");
+
+    await expect(
+      write_stdin({
+        session_id: Number(match?.[1]),
+        chars: "",
+      }),
+    ).rejects.toThrow("Unknown process id");
+  });
+
+  test("fails the session when its output file cannot be written", async () => {
+    const first = await exec_command({
+      cmd: "printf 'start\\n'; sleep 1; printf 'after\\n'; sleep 30",
+      yield_time_ms: 250,
+    });
+    const sessionId = first.output.match(
+      /Process running with session ID (\d+)/,
+    )?.[1];
+    expect(sessionId).toBeDefined();
+
+    const processState = backgroundProcesses.get(sessionId ?? "");
+    expect(processState?.outputFile).toBeDefined();
+    fs.rmSync(processState?.outputFile ?? "", { force: true });
+    fs.mkdirSync(processState?.outputFile ?? "");
+
+    await Bun.sleep(1_250);
+
+    expect(backgroundProcesses.get(sessionId ?? "")?.status).toBe("failed");
+  });
+
+  test("caps write_stdin inline output when max_output_tokens is too large", async () => {
+    const first = await exec_command({
+      cmd: "sleep 0.3; node -e \"process.stdout.write('y'.repeat(50000))\"",
+      yield_time_ms: 250,
+    });
+
+    let second: Awaited<ReturnType<typeof write_stdin>> | undefined;
+    try {
+      const match = first.output.match(/Process running with session ID (\d+)/);
+      expect(match?.[1]).toBeDefined();
+
+      second = await write_stdin({
+        session_id: Number(match?.[1]),
+        chars: "",
+        yield_time_ms: 1000,
+        max_output_tokens: 80_000,
+      });
+
+      expect(second.output).toContain("Process exited with code 0");
+      expect(second.output).toContain(
+        "[Output truncated: showing 30,000 of 50,000 characters.]",
+      );
+      expect(second.output).toContain("[Full output written to:");
+      expect(second.output.length).toBeLessThan(35_000);
+    } finally {
+      deleteOverflowFiles(first.output);
+      if (second) {
+        deleteOverflowFiles(second.output);
+      }
+    }
+  });
+
+  test("empty write_stdin polls wait like Codex background terminal polls", async () => {
+    const first = await exec_command({
+      cmd: "printf start; sleep 0.8; printf done",
+      yield_time_ms: 250,
+    });
+
+    const match = first.output.match(/Process running with session ID (\d+)/);
+    expect(match?.[1]).toBeDefined();
+
+    const second = await write_stdin({
+      session_id: Number(match?.[1]),
+      chars: "",
+      yield_time_ms: 100,
+    });
+
+    expect(second.output).toContain("Process exited with code 0");
+    expect(second.output).toContain("Output:\ndone");
+  });
+
+  test("empty write_stdin polls abort promptly", async () => {
+    const first = await exec_command({
+      cmd: "sleep 2",
+      yield_time_ms: 250,
+    });
+
+    const match = first.output.match(/Process running with session ID (\d+)/);
+    expect(match?.[1]).toBeDefined();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 50);
+    const startedAt = Date.now();
+    try {
+      await expect(
+        write_stdin({
+          session_id: Number(match?.[1]),
+          chars: "",
+          yield_time_ms: 30_000,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("The operation was aborted");
+    } finally {
+      clearTimeout(timer);
+    }
+
+    expect(Date.now() - startedAt).toBeLessThan(1000);
+  });
+
+  test("write_stdin sends input to tty-enabled sessions", async () => {
+    const first = await exec_command({
+      cmd: "cat",
+      tty: true,
+      yield_time_ms: 50,
+    });
+
+    const match = first.output.match(/Process running with session ID (\d+)/);
+    expect(match?.[1]).toBeDefined();
+
+    const second = await write_stdin({
+      session_id: Number(match?.[1]),
+      chars: "hello\n",
+      yield_time_ms: 200,
+    });
+
+    expect(second.output).toContain("Process running with session ID");
+    expect(second.output).toContain("Output:\nhello");
+  });
+
+  test("tty-enabled sessions allocate a terminal device", async () => {
+    const result = await exec_command({
+      cmd: "test -t 0 && printf tty || printf pipe",
+      tty: true,
+    });
+
+    expect(result.output).toContain("Process exited with code 0");
+    expect(result.output).toContain("Output:\ntty");
+  });
+
+  test("non-tty sessions close stdin like Codex pipe mode", async () => {
+    const result = await exec_command({
+      cmd: "cat",
+      yield_time_ms: 1000,
+    });
+
+    expect(result.output).toContain("Process exited with code 0");
+    expect(result.output).not.toContain("Process running with session ID");
+    expect(result.output).toContain("Output:\n");
+  });
+
+  test("write_stdin reports Codex stdin-closed error for non-tty sessions", async () => {
+    const first = await exec_command({
+      cmd: "sleep 2",
+      yield_time_ms: 250,
+    });
+
+    const match = first.output.match(/Process running with session ID (\d+)/);
+    expect(match?.[1]).toBeDefined();
+
+    await expect(
+      write_stdin({
+        session_id: Number(match?.[1]),
+        chars: "hello\n",
+      }),
+    ).rejects.toThrow(
+      "stdin is closed for this session; rerun exec_command with tty=true to keep stdin open",
+    );
+  });
+
+  test("write_stdin interrupts non-tty sessions with Ctrl-C", async () => {
+    const first = await exec_command({
+      cmd: "trap 'printf interrupted; exit 23' INT; while :; do sleep 1; done",
+      yield_time_ms: 250,
+    });
+
+    const match = first.output.match(/Process running with session ID (\d+)/);
+    expect(match?.[1]).toBeDefined();
+
+    const second = await write_stdin({
+      session_id: Number(match?.[1]),
+      chars: "\u0003",
+      yield_time_ms: 5_000,
+    });
+
+    expect(second.output).toContain("Process exited with code 23");
+    expect(second.output).toContain("Output:\ninterrupted");
+  });
+
+  test("preserves non-zero exit code in model-facing output", async () => {
+    const result = await exec_command({
+      cmd: "printf 'bad'; exit 7",
+    });
+
+    expect(result.output).toContain("Process exited with code 7");
+    expect(result.output).toContain("Output:\nbad");
+  });
+
+  test("streams stdout and stderr with distinct stream labels", async () => {
+    const chunks: Array<{ chunk: string; stream: "stdout" | "stderr" }> = [];
+
+    await exec_command({
+      cmd: "printf out; printf err >&2",
+      onOutput: (chunk, stream) => chunks.push({ chunk, stream }),
+    });
+
+    expect(
+      chunks.some(
+        (entry) => entry.stream === "stdout" && entry.chunk.includes("out"),
+      ),
+    ).toBe(true);
+    expect(
+      chunks.some(
+        (entry) => entry.stream === "stderr" && entry.chunk.includes("err"),
+      ),
+    ).toBe(true);
+  });
+});

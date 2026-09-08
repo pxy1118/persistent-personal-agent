@@ -53,13 +53,12 @@ test('pet image limits and supported extension match terminal input',async()=>{
     writeFileSync(file,Buffer.alloc(20*1024*1024+1)); await assert.rejects(petImage(file),/20MB/);
   } finally { rmSync(dir,{recursive:true,force:true}); }
 });
-test('stop during reconnection prevents the not-yet-sent input',async()=>{
-  const s=new Session();let resume!:()=>void;
-  s.restart=()=>new Promise<void>(resolve=>{resume=resolve;});
+test('send reuses the ready runtime without reconnecting',async()=>{
+  const s=new Session();let restarted=false;
+  s.restart=async()=>{restarted=true;};
   const b=new PetBridge(s as unknown as PpaSession,()=>{});
-  const send=b.dispatch({id:'send',method:'send',params:{text:'不要在停止后发送'}});
-  await b.dispatch({id:'stop',method:'stop'});resume();
-  await assert.rejects(send,/已停止/);assert.deepEqual(s.sent,[]);
+  await b.dispatch({id:'send',method:'send',params:{text:'复用当前运行时'}});
+  assert.equal(restarted,false);assert.deepEqual(s.sent,['复用当前运行时',[]]);
 });
 test('a stuck abort replaces only the owned runtime and emits cancelled',async()=>{
   const s=new Session();s.busy=true;s.stop=async()=>{};

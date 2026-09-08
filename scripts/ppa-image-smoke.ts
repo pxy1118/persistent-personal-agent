@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { PpaSession } from '../src/ppa-session.js';
-import { locations, root, readConfig, cliAsync, atomicJson, configureAgent, modelIds, modelHandle } from '../src/letta-runtime.js';
+import { locations, root, readConfig, cliAsync, atomicJson, configureAgent, modelIds, modelHandle } from '../src/ppa-runtime.js';
 import { acquireLock } from '../src/lock.js';
 
 // Real model + real native runtime, isolated identity. Validates multimodal `/image` delivery
@@ -19,6 +19,12 @@ let session: PpaSession | undefined;
 try {
   step('config'); let c = readConfig(locations());
   if (process.env.PPA_IMAGE_SMOKE_BASE) c = { ...c, modelBaseUrl: process.env.PPA_IMAGE_SMOKE_BASE };
+  if (process.env.PPA_IMAGE_SMOKE_PROVIDER) {
+    if (!['llama-cpp', 'openai-compatible'].includes(process.env.PPA_IMAGE_SMOKE_PROVIDER)) throw new Error('PPA_IMAGE_SMOKE_PROVIDER 无效。');
+    c = { ...c, provider: process.env.PPA_IMAGE_SMOKE_PROVIDER as typeof c.provider };
+  }
+  if (process.env.PPA_IMAGE_SMOKE_MODEL === 'auto') c = { ...c, modelId: null };
+  else if (process.env.PPA_IMAGE_SMOKE_MODEL) c = { ...c, modelId: process.env.PPA_IMAGE_SMOKE_MODEL };
   step('models', c.provider); const ids = await modelIds(c); step('modelIds', ids[0]);
   step('create-agent');
   const agent = JSON.parse(await cliAsync(p, ['agents', 'create', '--name', '糯糯 · 多模态验收', '--personality', 'blank', '--model', modelHandle(c, c.modelId ?? ids[0])]));

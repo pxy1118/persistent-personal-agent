@@ -1,0 +1,693 @@
+/**
+ * WebSocket client for listen mode
+ * Connects to Letta Cloud and receives messages to execute locally
+ */
+
+import type WebSocket from "ws";
+import {
+  clearPendingApprovalBatchIds,
+  rememberPendingApprovalBatchIds,
+  resolvePendingApprovalBatchId,
+  resolveRecoveryBatchId,
+} from "./approval";
+import {
+  handleAgentConversationManagementCommand,
+  handleAgentConversationManagementProtocolCommand,
+} from "./commands/agents-conversations";
+import { handleCronCommand } from "./commands/cron";
+import { handleListMemoryCommand } from "./commands/memory";
+import { buildListModelsEntries } from "./commands/model-catalog";
+import {
+  applyModelUpdateForRuntime,
+  buildListModelsResponse,
+  buildModelUpdateStatusMessage,
+  getCurrentModelStatusForRuntime,
+  resolveModelForUpdate,
+} from "./commands/model-toolset";
+import {
+  handleRuntimeStartCommand,
+  handleRuntimeStartProtocolCommand,
+} from "./commands/runtime-start";
+import {
+  handleExperimentCommand,
+  handleReflectionSettingsCommand,
+} from "./commands/settings";
+import {
+  handleCreateAgentCommand,
+  handleSkillCommand,
+} from "./commands/skills-agents";
+import {
+  handleAbortMessageInput,
+  handleApprovalResponseInput,
+  handleChangeDeviceStateInput,
+  handleCwdChange,
+  handleModeChange,
+} from "./control-inputs";
+import { getOrCreateScopedRuntime } from "./conversation-runtime";
+import {
+  getBootWorkingDirectory,
+  getConversationWorkingDirectory,
+  setConversationWorkingDirectory,
+} from "./cwd";
+import {
+  consumeInterruptQueue,
+  emitInterruptToolReturnMessage,
+  extractInterruptToolReturns,
+  getInterruptApprovalsForEmission,
+  normalizeExecutionResultsForInterruptParity,
+  normalizeToolReturnWireMessage,
+  populateInterruptQueue,
+  stashRecoveredApprovalInterrupts,
+} from "./interrupts";
+import {
+  createRuntime,
+  replaySyncStateForRuntime,
+  runDetachedListenerTask,
+  safeSocketSend,
+  startConnectedListenerRuntime,
+  stopRuntime,
+} from "./lifecycle";
+import {
+  buildDeviceStatus,
+  buildLoopStatus,
+  buildQueueSnapshot,
+  emitDeviceStatusUpdate,
+  emitInterruptedStatusDelta,
+  emitLoopStatusUpdate,
+  emitRetryDelta,
+  emitStateSync,
+} from "./protocol-outbound";
+import { consumeQueuedTurn, scheduleQueuePump } from "./queue";
+import {
+  getApprovalToolCallDesyncErrorText,
+  shouldAttemptPostStopApprovalRecovery,
+} from "./recovery";
+import { recoverApprovalStateForSync } from "./recovery-sync";
+import {
+  clearRecoveredApprovalStateForScope,
+  getListenerStatus,
+  getOrCreateConversationRuntime,
+  setActiveRuntime,
+} from "./runtime";
+import { resolveRuntimeScope } from "./scope";
+import {
+  markAwaitingAcceptedApprovalContinuationRunId,
+  resolveStaleApprovals,
+} from "./send";
+import { handleIncomingMessage } from "./turn";
+import type {
+  ConversationRuntime,
+  ListenerRuntime,
+  StartListenerOptions,
+} from "./types";
+
+function asListenerRuntimeForTests(
+  runtime: ListenerRuntime | ConversationRuntime,
+): ListenerRuntime {
+  return "listener" in runtime ? runtime.listener : runtime;
+}
+
+function createLegacyTestRuntime(): ConversationRuntime & {
+  activeAgentId: string | null;
+  activeConversationId: string;
+  socket: WebSocket | null;
+  workingDirectoryByConversation: Map<string, string>;
+  permissionModeByConversation: ListenerRuntime["permissionModeByConversation"];
+  skillSourcesByConversation: ListenerRuntime["skillSourcesByConversation"];
+  reminderStateByConversation: ListenerRuntime["reminderStateByConversation"];
+  contextTrackerByConversation: ListenerRuntime["contextTrackerByConversation"];
+  systemPromptRecompileByConversation: ListenerRuntime["systemPromptRecompileByConversation"];
+  queuedSystemPromptRecompileByConversation: ListenerRuntime["queuedSystemPromptRecompileByConversation"];
+  bootWorkingDirectory: string;
+  connectionId: string | null;
+  connectionName: string | null;
+  sessionId: string;
+  nextConnectionAttempt: number;
+  nextConnectionOrdinal: number;
+  connections: ListenerRuntime["connections"];
+  connectionIdsByRuntimeKey: ListenerRuntime["connectionIdsByRuntimeKey"];
+  processTransport: ListenerRuntime["processTransport"];
+  processServicesStarted: boolean;
+  processServicesGeneration: number;
+  processServicesReady: Promise<void> | null;
+  processServicesReadyGeneration: number | null;
+  serviceCommandHandler: ListenerRuntime["serviceCommandHandler"];
+  serviceCommandTypes: ListenerRuntime["serviceCommandTypes"];
+  pendingExternalToolCalls: ListenerRuntime["pendingExternalToolCalls"];
+  eventSeqCounter: number;
+  queueEmitScheduled: boolean;
+  pendingQueueEmitScope?: {
+    agent_id?: string | null;
+    conversation_id?: string | null;
+  };
+  onWsEvent?: StartListenerOptions["onWsEvent"];
+  reminderState: ListenerRuntime["reminderState"];
+  reconnectTimeout: NodeJS.Timeout | null;
+  heartbeatInterval: NodeJS.Timeout | null;
+  lastPongAt: number | null;
+  intentionallyClosed: boolean;
+  hasSuccessfulConnection: boolean;
+  everConnected: boolean;
+  conversationRuntimes: ListenerRuntime["conversationRuntimes"];
+  memfsSyncedAgents: ListenerRuntime["memfsSyncedAgents"];
+  secretsHydrationByAgent: ListenerRuntime["secretsHydrationByAgent"];
+  secretsHydrationFreshnessByAgent: ListenerRuntime["secretsHydrationFreshnessByAgent"];
+  secretsDirtyAgents: ListenerRuntime["secretsDirtyAgents"];
+  agentMetadataByAgent: ListenerRuntime["agentMetadataByAgent"];
+  worktreeWatcherByConversation: ListenerRuntime["worktreeWatcherByConversation"];
+  lastEmittedStatus: ListenerRuntime["lastEmittedStatus"];
+} {
+  const listener = createRuntime();
+  const runtime = getOrCreateScopedRuntime(listener, null, "default");
+  const bridge = runtime as ConversationRuntime & {
+    activeAgentId: string | null;
+    activeConversationId: string;
+    socket: WebSocket | null;
+    workingDirectoryByConversation: Map<string, string>;
+    permissionModeByConversation: ListenerRuntime["permissionModeByConversation"];
+    skillSourcesByConversation: ListenerRuntime["skillSourcesByConversation"];
+    reminderStateByConversation: ListenerRuntime["reminderStateByConversation"];
+    contextTrackerByConversation: ListenerRuntime["contextTrackerByConversation"];
+    systemPromptRecompileByConversation: ListenerRuntime["systemPromptRecompileByConversation"];
+    queuedSystemPromptRecompileByConversation: ListenerRuntime["queuedSystemPromptRecompileByConversation"];
+    bootWorkingDirectory: string;
+    connectionId: string | null;
+    connectionName: string | null;
+    sessionId: string;
+    nextConnectionAttempt: number;
+    nextConnectionOrdinal: number;
+    connections: ListenerRuntime["connections"];
+    connectionIdsByRuntimeKey: ListenerRuntime["connectionIdsByRuntimeKey"];
+    processTransport: ListenerRuntime["processTransport"];
+    processServicesStarted: boolean;
+    processServicesGeneration: number;
+    processServicesReady: Promise<void> | null;
+    processServicesReadyGeneration: number | null;
+    serviceCommandHandler: ListenerRuntime["serviceCommandHandler"];
+    serviceCommandTypes: ListenerRuntime["serviceCommandTypes"];
+    pendingExternalToolCalls: ListenerRuntime["pendingExternalToolCalls"];
+    eventSeqCounter: number;
+    queueEmitScheduled: boolean;
+    pendingQueueEmitScope?: {
+      agent_id?: string | null;
+      conversation_id?: string | null;
+    };
+    onWsEvent?: StartListenerOptions["onWsEvent"];
+    reminderState: ListenerRuntime["reminderState"];
+    reconnectTimeout: NodeJS.Timeout | null;
+    heartbeatInterval: NodeJS.Timeout | null;
+    lastPongAt: number | null;
+    intentionallyClosed: boolean;
+    hasSuccessfulConnection: boolean;
+    everConnected: boolean;
+    conversationRuntimes: ListenerRuntime["conversationRuntimes"];
+    memfsSyncedAgents: ListenerRuntime["memfsSyncedAgents"];
+    secretsHydrationByAgent: ListenerRuntime["secretsHydrationByAgent"];
+    secretsHydrationFreshnessByAgent: ListenerRuntime["secretsHydrationFreshnessByAgent"];
+    secretsDirtyAgents: ListenerRuntime["secretsDirtyAgents"];
+    agentMetadataByAgent: ListenerRuntime["agentMetadataByAgent"];
+    worktreeWatcherByConversation: ListenerRuntime["worktreeWatcherByConversation"];
+    lastEmittedStatus: ListenerRuntime["lastEmittedStatus"];
+  };
+  for (const [prop, getSet] of Object.entries({
+    socket: {
+      get: () => listener.socket,
+      set: (value: WebSocket | null) => {
+        listener.socket = value;
+      },
+    },
+    workingDirectoryByConversation: {
+      get: () => listener.workingDirectoryByConversation,
+      set: (value: Map<string, string>) => {
+        listener.workingDirectoryByConversation = value;
+      },
+    },
+    permissionModeByConversation: {
+      get: () => listener.permissionModeByConversation,
+      set: (value: ListenerRuntime["permissionModeByConversation"]) => {
+        listener.permissionModeByConversation = value;
+      },
+    },
+    skillSourcesByConversation: {
+      get: () => listener.skillSourcesByConversation,
+      set: (value: ListenerRuntime["skillSourcesByConversation"]) => {
+        listener.skillSourcesByConversation = value;
+      },
+    },
+    reminderStateByConversation: {
+      get: () => listener.reminderStateByConversation,
+      set: (value: ListenerRuntime["reminderStateByConversation"]) => {
+        listener.reminderStateByConversation = value;
+      },
+    },
+    contextTrackerByConversation: {
+      get: () => listener.contextTrackerByConversation,
+      set: (value: ListenerRuntime["contextTrackerByConversation"]) => {
+        listener.contextTrackerByConversation = value;
+      },
+    },
+    systemPromptRecompileByConversation: {
+      get: () => listener.systemPromptRecompileByConversation,
+      set: (value: ListenerRuntime["systemPromptRecompileByConversation"]) => {
+        listener.systemPromptRecompileByConversation = value;
+      },
+    },
+    queuedSystemPromptRecompileByConversation: {
+      get: () => listener.queuedSystemPromptRecompileByConversation,
+      set: (
+        value: ListenerRuntime["queuedSystemPromptRecompileByConversation"],
+      ) => {
+        listener.queuedSystemPromptRecompileByConversation = value;
+      },
+    },
+    bootWorkingDirectory: {
+      get: () => getBootWorkingDirectory(listener),
+      set: (value: string) => {
+        listener.bootWorkingDirectory = value;
+      },
+    },
+    connectionId: {
+      get: () => listener.connectionId,
+      set: (value: string | null) => {
+        listener.connectionId = value;
+      },
+    },
+    connectionName: {
+      get: () => listener.connectionName,
+      set: (value: string | null) => {
+        listener.connectionName = value;
+      },
+    },
+    sessionId: {
+      get: () => listener.sessionId,
+      set: (value: string) => {
+        listener.sessionId = value;
+      },
+    },
+    nextConnectionAttempt: {
+      get: () => listener.nextConnectionAttempt,
+      set: (value: number) => {
+        listener.nextConnectionAttempt = value;
+      },
+    },
+    nextConnectionOrdinal: {
+      get: () => listener.nextConnectionOrdinal,
+      set: (value: number) => {
+        listener.nextConnectionOrdinal = value;
+      },
+    },
+    connections: {
+      get: () => listener.connections,
+      set: (value: ListenerRuntime["connections"]) => {
+        listener.connections = value;
+      },
+    },
+    connectionIdsByRuntimeKey: {
+      get: () => listener.connectionIdsByRuntimeKey,
+      set: (value: ListenerRuntime["connectionIdsByRuntimeKey"]) => {
+        listener.connectionIdsByRuntimeKey = value;
+      },
+    },
+    processTransport: {
+      get: () => listener.processTransport,
+      set: (value: ListenerRuntime["processTransport"]) => {
+        listener.processTransport = value;
+      },
+    },
+    processServicesStarted: {
+      get: () => listener.processServicesStarted,
+      set: (value: boolean) => {
+        listener.processServicesStarted = value;
+      },
+    },
+    processServicesGeneration: {
+      get: () => listener.processServicesGeneration,
+      set: (value: number) => {
+        listener.processServicesGeneration = value;
+      },
+    },
+    processServicesReady: {
+      get: () => listener.processServicesReady,
+      set: (value: Promise<void> | null) => {
+        listener.processServicesReady = value;
+      },
+    },
+    processServicesReadyGeneration: {
+      get: () => listener.processServicesReadyGeneration,
+      set: (value: number | null) => {
+        listener.processServicesReadyGeneration = value;
+      },
+    },
+    serviceCommandHandler: {
+      get: () => listener.serviceCommandHandler,
+      set: (value: ListenerRuntime["serviceCommandHandler"]) => {
+        listener.serviceCommandHandler = value;
+      },
+    },
+    serviceCommandTypes: {
+      get: () => listener.serviceCommandTypes,
+      set: (value: ListenerRuntime["serviceCommandTypes"]) => {
+        listener.serviceCommandTypes = value;
+      },
+    },
+    pendingExternalToolCalls: {
+      get: () => listener.pendingExternalToolCalls,
+      set: (value: ListenerRuntime["pendingExternalToolCalls"]) => {
+        listener.pendingExternalToolCalls = value;
+      },
+    },
+    eventSeqCounter: {
+      get: () => listener.eventSeqCounter,
+      set: (value: number) => {
+        listener.eventSeqCounter = value;
+      },
+    },
+    queueEmitScheduled: {
+      get: () => listener.queueEmitScheduled,
+      set: (value: boolean) => {
+        listener.queueEmitScheduled = value;
+      },
+    },
+    pendingQueueEmitScope: {
+      get: () => listener.pendingQueueEmitScope,
+      set: (
+        value:
+          | {
+              agent_id?: string | null;
+              conversation_id?: string | null;
+            }
+          | undefined,
+      ) => {
+        listener.pendingQueueEmitScope = value;
+      },
+    },
+    onWsEvent: {
+      get: () => listener.onWsEvent,
+      set: (value: StartListenerOptions["onWsEvent"] | undefined) => {
+        listener.onWsEvent = value;
+      },
+    },
+    reminderState: {
+      get: () => listener.reminderState,
+      set: (value: ListenerRuntime["reminderState"]) => {
+        listener.reminderState = value;
+      },
+    },
+    reconnectTimeout: {
+      get: () => listener.reconnectTimeout,
+      set: (value: NodeJS.Timeout | null) => {
+        listener.reconnectTimeout = value;
+      },
+    },
+    heartbeatInterval: {
+      get: () => listener.heartbeatInterval,
+      set: (value: NodeJS.Timeout | null) => {
+        listener.heartbeatInterval = value;
+      },
+    },
+    lastPongAt: {
+      get: () => listener.lastPongAt,
+      set: (value: number | null) => {
+        listener.lastPongAt = value;
+      },
+    },
+    intentionallyClosed: {
+      get: () => listener.intentionallyClosed,
+      set: (value: boolean) => {
+        listener.intentionallyClosed = value;
+      },
+    },
+    hasSuccessfulConnection: {
+      get: () => listener.hasSuccessfulConnection,
+      set: (value: boolean) => {
+        listener.hasSuccessfulConnection = value;
+      },
+    },
+    everConnected: {
+      get: () => listener.everConnected,
+      set: (value: boolean) => {
+        listener.everConnected = value;
+      },
+    },
+    conversationRuntimes: {
+      get: () => listener.conversationRuntimes,
+      set: (value: ListenerRuntime["conversationRuntimes"]) => {
+        listener.conversationRuntimes = value;
+      },
+    },
+    memfsSyncedAgents: {
+      get: () => listener.memfsSyncedAgents,
+      set: (value: ListenerRuntime["memfsSyncedAgents"]) => {
+        listener.memfsSyncedAgents = value;
+      },
+    },
+    secretsHydrationByAgent: {
+      get: () => listener.secretsHydrationByAgent,
+      set: (value: ListenerRuntime["secretsHydrationByAgent"]) => {
+        listener.secretsHydrationByAgent = value;
+      },
+    },
+    secretsHydrationFreshnessByAgent: {
+      get: () => listener.secretsHydrationFreshnessByAgent,
+      set: (value: ListenerRuntime["secretsHydrationFreshnessByAgent"]) => {
+        listener.secretsHydrationFreshnessByAgent = value;
+      },
+    },
+    secretsDirtyAgents: {
+      get: () => listener.secretsDirtyAgents,
+      set: (value: ListenerRuntime["secretsDirtyAgents"]) => {
+        listener.secretsDirtyAgents = value;
+      },
+    },
+    agentMetadataByAgent: {
+      get: () => listener.agentMetadataByAgent,
+      set: (value: ListenerRuntime["agentMetadataByAgent"]) => {
+        listener.agentMetadataByAgent = value;
+      },
+    },
+    worktreeWatcherByConversation: {
+      get: () => listener.worktreeWatcherByConversation,
+      set: (value: ListenerRuntime["worktreeWatcherByConversation"]) => {
+        listener.worktreeWatcherByConversation = value;
+      },
+    },
+    lastEmittedStatus: {
+      get: () => listener.lastEmittedStatus,
+      set: (value: ListenerRuntime["lastEmittedStatus"]) => {
+        listener.lastEmittedStatus = value;
+      },
+    },
+    activeAgentId: {
+      get: () => runtime.agentId,
+      set: (value: string | null) => {
+        runtime.agentId = value;
+      },
+    },
+    activeConversationId: {
+      get: () => runtime.conversationId,
+      set: (value: string) => {
+        runtime.conversationId = value;
+      },
+    },
+  })) {
+    Object.defineProperty(bridge, prop, {
+      configurable: true,
+      enumerable: false,
+      get: getSet.get,
+      set: getSet.set,
+    });
+  }
+  return bridge;
+}
+
+export {
+  rejectPendingApprovalResolvers,
+  requestApprovalOverWS,
+  resolvePendingApprovalResolver,
+} from "./approval";
+export type { StartLocalChannelListenerOptions } from "./lifecycle";
+export {
+  isListenerActive,
+  startListenerClient,
+  startLocalChannelListener,
+  stopListenerClient,
+} from "./lifecycle";
+export { parseServerMessage } from "./protocol-inbound";
+export { emitInterruptedStatusDelta } from "./protocol-outbound";
+
+export const __listenClientTestUtils = {
+  createRuntime: createLegacyTestRuntime,
+  createListenerRuntime: createRuntime,
+  startConnectedListenerRuntime: startConnectedListenerRuntime,
+  handleModeChange,
+  getOrCreateScopedRuntime,
+  buildListModelsEntries,
+  buildListModelsResponse,
+  buildModelUpdateStatusMessage,
+  getCurrentModelStatusForRuntime,
+  resolveModelForUpdate,
+  applyModelUpdateForRuntime,
+  stopRuntime: (
+    runtime: ListenerRuntime | ConversationRuntime,
+    suppressCallbacks: boolean,
+  ) => stopRuntime(asListenerRuntimeForTests(runtime), suppressCallbacks),
+  setActiveRuntime,
+  getListenerStatus,
+  getOrCreateConversationRuntime,
+  resolveRuntimeScope,
+  buildDeviceStatus,
+  buildLoopStatus,
+  buildQueueSnapshot,
+  emitDeviceStatusUpdate,
+  emitLoopStatusUpdate,
+  handleCwdChange,
+  getConversationWorkingDirectory,
+  rememberPendingApprovalBatchIds,
+  resolvePendingApprovalBatchId,
+  resolveRecoveryBatchId,
+  clearPendingApprovalBatchIds,
+  populateInterruptQueue,
+  setConversationWorkingDirectory,
+  consumeInterruptQueue,
+  stashRecoveredApprovalInterrupts,
+  extractInterruptToolReturns,
+  emitInterruptToolReturnMessage,
+  emitInterruptedStatusDelta,
+  emitRetryDelta,
+  getInterruptApprovalsForEmission,
+  normalizeToolReturnWireMessage,
+  normalizeExecutionResultsForInterruptParity,
+  getApprovalToolCallDesyncErrorText,
+  shouldAttemptPostStopApprovalRecovery,
+  markAwaitingAcceptedApprovalContinuationRunId,
+  resolveStaleApprovals,
+  consumeQueuedTurn,
+  handleIncomingMessage,
+  handleApprovalResponseInput,
+  handleAbortMessageInput,
+  handleChangeDeviceStateInput,
+  handleCronCommand: (
+    parsed: Parameters<typeof handleCronCommand>[0],
+    socket: WebSocket,
+  ) => handleCronCommand(parsed, socket, safeSocketSend),
+  handleListMemoryCommand: (
+    parsed: Parameters<typeof handleListMemoryCommand>[0],
+    socket: WebSocket,
+    overrides?: Parameters<typeof handleListMemoryCommand>[3],
+  ) => handleListMemoryCommand(parsed, socket, safeSocketSend, overrides),
+  handleAgentConversationManagementCommand: (
+    parsed: Parameters<typeof handleAgentConversationManagementCommand>[0],
+    socket: WebSocket,
+  ) => handleAgentConversationManagementCommand(parsed, socket, safeSocketSend),
+  handleAgentConversationManagementProtocolCommand: (
+    parsed: Parameters<
+      typeof handleAgentConversationManagementProtocolCommand
+    >[0],
+    socket: WebSocket,
+  ) =>
+    handleAgentConversationManagementProtocolCommand(parsed, {
+      socket,
+      safeSocketSend,
+      runDetachedListenerTask,
+    }),
+  handleRuntimeStartCommand: (
+    parsed: Parameters<typeof handleRuntimeStartCommand>[0],
+    socket: WebSocket,
+    runtime: ListenerRuntime,
+  ) =>
+    handleRuntimeStartCommand(parsed, {
+      socket,
+      connectionId: runtime.connectionId ?? "test-connection",
+      runtime,
+      safeSocketSend,
+      runDetachedListenerTask,
+      getOrCreateScopedRuntime,
+      replaySyncStateForRuntime: (
+        listenerRuntime,
+        runtimeSocket,
+        scope,
+        opts,
+      ) =>
+        replaySyncStateForRuntime(listenerRuntime, runtimeSocket, scope, {
+          ...opts,
+          scheduleWarmupsAfterSync: () => {},
+        }),
+    }),
+  handleRuntimeStartProtocolCommand: (
+    parsed: Parameters<typeof handleRuntimeStartProtocolCommand>[0],
+    socket: WebSocket,
+    runtime: ListenerRuntime,
+  ) =>
+    handleRuntimeStartProtocolCommand(parsed, {
+      socket,
+      connectionId: runtime.connectionId ?? "test-connection",
+      runtime,
+      safeSocketSend,
+      runDetachedListenerTask,
+      getOrCreateScopedRuntime,
+      replaySyncStateForRuntime: (
+        listenerRuntime,
+        runtimeSocket,
+        scope,
+        opts,
+      ) =>
+        replaySyncStateForRuntime(listenerRuntime, runtimeSocket, scope, {
+          ...opts,
+          scheduleWarmupsAfterSync: () => {},
+        }),
+    }),
+  handleSkillCommand: (
+    parsed: Parameters<typeof handleSkillCommand>[0],
+    socket: WebSocket,
+  ) => handleSkillCommand(parsed, socket, safeSocketSend),
+  handleCreateAgentCommand: (
+    parsed: Parameters<typeof handleCreateAgentCommand>[0],
+    socket: WebSocket,
+  ) => handleCreateAgentCommand(parsed, socket, safeSocketSend),
+  handleExperimentCommand: (
+    parsed: Parameters<typeof handleExperimentCommand>[0],
+    socket: WebSocket,
+    listener: ListenerRuntime,
+  ) => handleExperimentCommand(parsed, socket, listener, safeSocketSend),
+  handleReflectionSettingsCommand: (
+    parsed: Parameters<typeof handleReflectionSettingsCommand>[0],
+    socket: WebSocket,
+    listener: ListenerRuntime,
+  ) =>
+    handleReflectionSettingsCommand(parsed, socket, listener, safeSocketSend),
+  scheduleQueuePump,
+  replaySyncStateForRuntime: (
+    runtime: ListenerRuntime,
+    socket: WebSocket,
+    scope: { agent_id: string | null; conversation_id: string },
+    opts?: {
+      recoverApprovals?: boolean;
+      recoverApprovalStateForSync?: (
+        runtime: ConversationRuntime,
+        scope: { agent_id: string | null; conversation_id: string },
+      ) => Promise<void>;
+      scheduleWarmupsAfterSync?: (
+        runtime: ListenerRuntime,
+        scope: { agent_id: string | null; conversation_id: string },
+      ) => void;
+      forceDeviceStatus?: boolean;
+    },
+  ) =>
+    replaySyncStateForRuntime(runtime, socket, scope, {
+      ...opts,
+      scheduleWarmupsAfterSync: opts?.scheduleWarmupsAfterSync ?? (() => {}),
+    }),
+  recoverApprovalStateForSync,
+  clearRecoveredApprovalStateForScope: (
+    runtime: ListenerRuntime | ConversationRuntime,
+    scope?: {
+      agent_id?: string | null;
+      conversation_id?: string | null;
+    },
+  ) =>
+    clearRecoveredApprovalStateForScope(
+      asListenerRuntimeForTests(runtime),
+      scope,
+    ),
+  emitStateSync,
+};
