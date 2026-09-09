@@ -12,15 +12,23 @@ export const digest = (v: string | Buffer) => createHash('sha256').update(v).dig
 export const json = <T = any>(p: string): T => JSON.parse(readFileSync(p, 'utf8'));
 export function atomicJson(p: string, v: unknown) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p + '.tmp', JSON.stringify(v, null, 2) + '\n'); renameSync(p + '.tmp', p); }
 export type LettaConfig = { modelBaseUrl: string; modelId: string | null; contextWindow: number; maxTokens: number; provider: ModelProvider; apiKeyEnv?: string };
+export const responseModes = ['native', 'adaptive'] as const;
+export type ResponseMode = (typeof responseModes)[number];
 export const modelProviders = ['openai-compatible', 'llama-cpp'] as const;
 export type ModelProvider = (typeof modelProviders)[number];
 /** Canonical local model handle for a provider; llama.cpp uses the `llama.cpp/` prefix. */
 export function modelHandle(c: LettaConfig, modelId: string) { return `${c.provider === 'llama-cpp' ? 'llama.cpp' : 'openai-compatible'}/${modelId}`; }
 export function locations(data = process.env.PPA_DATA_DIR ?? join(root, '.ppa')) {
   data = resolve(data);
-  return { data, store: join(data, 'letta'), workspace: join(data, 'workspace'), manifest: join(data, 'letta-migration.json'), settings: join(data, 'letta-config.json'), backups: join(data, 'backups') };
+  return { data, store: join(data, 'letta'), workspace: join(data, 'workspace'), manifest: join(data, 'letta-migration.json'), settings: join(data, 'letta-config.json'), interaction: join(data, 'interaction.json'), backups: join(data, 'backups') };
 }
 export type Locations = ReturnType<typeof locations>;
+export function readResponseMode(p: Locations): ResponseMode {
+  if (!existsSync(p.interaction)) return 'native';
+  const mode = json<Record<string, unknown>>(p.interaction).responseMode;
+  return responseModes.includes(mode as ResponseMode) ? mode as ResponseMode : 'native';
+}
+export function writeResponseMode(p: Locations, responseMode: ResponseMode) { atomicJson(p.interaction, { responseMode }); }
 export function normalizeConfig(c: Record<string, any>): LettaConfig {
   if (typeof c.modelBaseUrl !== 'string') throw new Error('模型地址无效。');
   const url = new URL(c.modelBaseUrl);
@@ -103,15 +111,42 @@ export function agentFile(p: Locations, id: string) {
   if (matches.length !== 1) throw new Error('本地 Agent 缺失或重复，禁止自动创建替代助手。');
   return join(dir, matches[0]);
 }
+const rhythmInstructionsStart = '<!-- PPA_NATURAL_RHYTHM_START -->';
+const rhythmInstructionsEnd = '<!-- PPA_NATURAL_RHYTHM_END -->';
+const rhythmInstructions = `${rhythmInstructionsStart}
+## PPA natural conversation rhythm
+
+- Complete greetings, acknowledgements, and other simple replies in one natural sentence when that is enough. Do not add analysis merely to appear thoughtful.
+- When the user shares distress, first respond to the specific feeling or tension they expressed. Do not immediately expand into a generic advice list unless they asked for analysis or advice.
+- A visible opening may state only what is already known from the user's message. Never claim that evidence was checked, a tool ran, or an action succeeded before it actually happened.
+- When the user corrects something, continue with the corrected meaning directly. Do not recite the previous answer, repeat the correction, or write long-term memory unless the user explicitly asks you to remember it.
+- Do not narrate your process with filler such as “I am thinking”, “this requires analysis”, or “almost done”. If private deliberation is needed, either call it silently before answering, or—when a person first needs to feel heard—give one specific honest response and then deliberate.
+- After private deliberation or a tool call, continue from the next useful point. Do not repeat any sentence already shown in the same turn.
+- If private deliberation fails or times out, continue only once, state what remains uncertain, and do not invent a conclusion or retry deliberation.
+- PPA has real file reading and editing, shell, screen capture, durable memory, task, and skill capabilities. Ordinary chat requests intentionally hide their large schemas. When one is needed, use activate_capability so PPA can attach its real tools and continue the same user turn. Never interpret a temporarily hidden schema as evidence that the capability does not exist, and never tell the user it is unavailable before attempting activation.
+${rhythmInstructionsEnd}`;
+export function withNaturalRhythmInstructions(system: string) {
+  const escapedStart = rhythmInstructionsStart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedEnd = rhythmInstructionsEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return system.replace(new RegExp(`\\n?${escapedStart}[\\s\\S]*?${escapedEnd}`, 'g'), '').trimEnd() + '\n\n' + rhythmInstructions + '\n';
+}
 export function memoryDir(p: Locations, id: string) { agentFile(p, id); return join(p.store, 'memfs', id, 'memory'); }
-export function configureAgent(p: Locations, id: string, c: LettaConfig, initialModel?: string) {
+export function configureAgent(p: Locations, id: string, c: LettaConfig, initialModel?: string, responseMode: ResponseMode = 'native') {
   // Version-pinned native state adapter. Run only with no Letta process alive.
   const file = agentFile(p, id), a = json(file);
   if (!a.model_settings || typeof a.system !== 'string') throw new Error('不支持的 PPA Runtime Agent 存储结构。');
   const previous = existsSync(p.settings) ? json(p.settings) : null;
   if (initialModel) a.model = modelHandle(c, initialModel);
   else if (c.modelId && (previous?.modelId !== c.modelId || previous?.provider !== c.provider)) a.model = modelHandle(c, c.modelId);
-  a.model_settings = { ...a.model_settings, context_window_limit: c.contextWindow, max_tokens: c.maxTokens };
+  a.model_settings = {
+    ...a.model_settings,
+    context_window_limit: c.contextWindow,
+    max_tokens: c.maxTokens,
+    ppa_response_mode: responseMode,
+    thinking: { type: responseMode === 'adaptive' ? 'disabled' : 'enabled' },
+    reasoning_effort: responseMode === 'adaptive' ? null : 'high'
+  };
+  a.system = withNaturalRhythmInstructions(a.system);
   atomicJson(file, a); atomicJson(p.settings, c);
 }
 export function connect(p: Locations, c: LettaConfig) {

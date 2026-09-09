@@ -6,7 +6,7 @@ import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { locations, atomicJson, json, childEnv, agentFile, cliPath, configureAgent, normalizeConfig, modelApiKey, modelHandle, modelIds, root, upstreamVersion, version } from '../src/ppa-runtime.js';
+import { locations, atomicJson, json, childEnv, agentFile, cliPath, configureAgent, normalizeConfig, modelApiKey, modelHandle, modelIds, root, upstreamVersion, version, withNaturalRhythmInstructions } from '../src/ppa-runtime.js';
 import { readLegacy, renderImport, backupLetta, restoreLetta } from '../src/ppa-data.js';
 import { addProfile, readProfiles, selectProfile, writeActiveConfig } from '../src/model-profiles.js';
 import { acquireLock } from '../src/lock.js';
@@ -30,6 +30,14 @@ test('runtime entry resolves from the project-owned PPA package', () => {
   assert.equal(pkg.version, version);
   assert.equal(upstreamVersion, '0.31.12');
   assert.equal(existsSync(join(root, 'node_modules/@letta-ai/letta-code')), false);
+});
+test('natural rhythm instructions are scoped and idempotent',()=>{
+  const once=withNaturalRhythmInstructions('原有人格。'),twice=withNaturalRhythmInstructions(once);
+  assert.equal(twice,once);
+  assert.match(once,/原有人格/);
+  assert.match(once,/Do not immediately expand into a generic advice list/);
+  assert.match(once,/or write long-term memory unless the user explicitly asks/);
+  assert.equal((once.match(/PPA_NATURAL_RHYTHM_START/g)??[]).length,1);
 });
 test('only effective global/current-workspace memories and latest identity are selected', () => {
   const { p } = fixture(), db = new DatabaseSync(join(p.data, 'ppa.sqlite'));

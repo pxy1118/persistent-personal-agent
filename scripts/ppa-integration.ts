@@ -10,25 +10,56 @@ const p = locations(join(root, '.ppa', `ppa-interface-test-${Date.now()}`)); mkd
 const report: any = { status: 'RUNNING', data: p.data, checks: [] };
 const reportFile = join(root, '.ppa/reports/ppa-interface.json');
 const pass = (name: string) => { report.checks.push(name); atomicJson(reportFile, report); console.log('PASS ' + name); };
-let mode = 'chat', count = 0, model = '', timeout: NodeJS.Timeout | undefined, sawImage = false, sawScreenTool = false, sawScreenImage = false, screenApproval = false;
+let mode = 'chat', count = 0, model = '', timeout: NodeJS.Timeout | undefined, sawImage = false, sawScreenTool = false, sawScreenImage = false, screenApproval = false, sawDeliberate = false, lightweightTools: string[] = [], expandedScreenTools: string[] = [], screenToolIssued = false, fileToolIssued = false;
 const server = createServer(async (req, res) => {
   if (req.url === '/v1/models') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ data: [{ id: 'fixture' }, { id: 'fixture2' }] })); return; }
+  if (req.url === '/apply-template') {
+    let raw='';for await(const d of req)raw+=d;const body=JSON.parse(raw);
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({prompt:body.chat_template_kwargs?.enable_thinking?'THINKING_TEMPLATE':'DIRECT_TEMPLATE'}));return;
+  }
   // llama-cpp provider discovery probes /props for vision capabilities; the local model is vision-capable.
-  if (req.url?.startsWith('/props')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ modalities: { vision: true }, default_generation_settings: { n_ctx: 32768 } })); return; }
+  if (req.url?.startsWith('/props')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ modalities: { vision: true }, default_generation_settings: { n_ctx: 32768 }, chat_template:'{% if enable_thinking %}<think>{{ reasoning_content }}{% endif %}' })); return; }
   // llama-cpp discovery also probes the native endpoint before falling back to OpenAI compatibility.
   if (req.method === 'GET' || req.method === 'HEAD') { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end('{"error":"not found"}'); return; }
   let raw = ''; for await (const d of req) raw += d;
-  const body = JSON.parse(raw); count++; model = body.model;
+  const body = JSON.parse(raw); model = body.model;
+  if(body.stream===false){
+    res.setHeader('Content-Type','application/json');
+    const thinking=body.chat_template_kwargs?.enable_thinking===true;
+    const budget=thinking&&Number.isFinite(body.thinking_budget_tokens)?Number(body.thinking_budget_tokens):0;
+    const content=thinking?'先确认约束，再比较证据；结论仍需说明不确定性。':'OK';
+    const reasoning_content=budget>0?'推'.repeat(budget):'';
+    res.end(JSON.stringify({choices:[{message:{role:'assistant',content,reasoning_content}}],usage:{completion_tokens:12,completion_tokens_details:{reasoning_tokens:budget}}}));return;
+  }
+  count++;
+  const toolNames = body.tools?.map((tool: any) => tool.function?.name).filter(Boolean) ?? [];
+  if (mode === 'chat' && count === 1) lightweightTools = toolNames;
+  if (mode === 'screen' && toolNames.includes('capture_screen')) expandedScreenTools = toolNames;
   sawScreenTool ||= body.tools?.some((tool: any) => tool.function?.name === 'capture_screen');
+  sawDeliberate ||= body.tools?.some((tool: any) => tool.function?.name === 'deliberate');
   const last = body.messages.at(-1);
   if (Array.isArray(last.content)) sawImage ||= last.content.some((part: any) => part.type === 'image_url' && typeof part.image_url?.url === 'string' && part.image_url.url.startsWith('data:image/png;base64,'));
   if (mode === 'screen' && count > 1 && Array.isArray(last.content)) sawScreenImage ||= last.content.some((part: any) => part.type === 'image_url' && typeof part.image_url?.url === 'string' && part.image_url.url.startsWith('data:image/png;base64,'));
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   const emit = (delta: object, finish_reason: string | null = null) => res.write(`data: ${JSON.stringify({ id: 'ppa-test', object: 'chat.completion.chunk', created: 1, model: body.model, choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
   if (mode === 'cancel') { const t = setInterval(() => emit({ content: '持续输出 ' }), 40); res.on('close', () => clearInterval(t)); return; }
-  if (mode === 'screen' && count === 1) {
+  if (mode === 'adaptive-opening' && count === 1) {
+    emit({role:'assistant',content:'这件事确实让你很为难。',tool_calls:[{index:0,id:'test-deliberate',type:'function',function:{name:'deliberate',arguments:JSON.stringify({question:'比较约束和不确定性',depth:'standard'})}}]});emit({},'tool_calls');
+  } else if (mode === 'adaptive-opening' && count === 2) {
+    emit({role:'assistant',content:'这件事确实让你很为难。接下来先确认约束，再比较证据。'});emit({},'stop');
+  } else if (mode === 'adaptive-silent' && count === 1) {
+    emit({role:'assistant',tool_calls:[{index:0,id:'test-deliberate-silent',type:'function',function:{name:'deliberate',arguments:JSON.stringify({question:'严谨判断',depth:'deep'})}}]});emit({},'tool_calls');
+  } else if (mode === 'adaptive-silent' && count === 2) {
+    emit({role:'assistant',content:'谨慎结论：目前证据只支持有限判断。'});emit({},'stop');
+  } else if (mode === 'screen' && count === 1) {
+    emit({ role: 'assistant', tool_calls: [{ index: 0, id: 'test-activate-screen', type: 'function', function: { name: 'activate_capability', arguments: JSON.stringify({ capabilities: ['screen'], reason: '读取用户要求查看的屏幕' }) } }] }); emit({}, 'tool_calls');
+  } else if (mode === 'screen' && toolNames.includes('capture_screen') && !screenToolIssued) {
+    screenToolIssued = true;
     emit({ role: 'assistant', tool_calls: [{ index: 0, id: 'test-screen', type: 'function', function: { name: 'capture_screen', arguments: JSON.stringify({ display: 'primary', max_width: 800 }) } }] }); emit({}, 'tool_calls');
   } else if (['allow','deny'].includes(mode) && count === 1) {
+    emit({ role: 'assistant', tool_calls: [{ index: 0, id: `test-activate-${mode}`, type: 'function', function: { name: 'activate_capability', arguments: JSON.stringify({ capabilities: ['files_write'], reason: '执行用户要求的文件写入' }) } }] }); emit({}, 'tool_calls');
+  } else if (['allow','deny'].includes(mode) && toolNames.includes('Write') && !fileToolIssued) {
+    fileToolIssued = true;
     emit({ role: 'assistant', tool_calls: [{ index: 0, id: `test-${mode}`, type: 'function', function: { name: 'Write', arguments: JSON.stringify({ file_path: join(p.workspace, `${mode}.txt`), content: 'PPA_NATIVE_WRITE' }) } }] }); emit({}, 'tool_calls');
   } else { emit({ role: 'assistant', reasoning_content: 'PRIVATE_REASONING' }); emit({ content: '你好，' }); emit({ content: '这是 PPA。' }); emit({}, 'stop'); }
   res.end('data: [DONE]\n\n');
@@ -46,7 +77,7 @@ try {
     const finished = once(session!, 'done'); timeout = setTimeout(() => { void session!.stop(); }, 20000);
     await session!.send(input, images); await finished; clearTimeout(timeout);
   };
-  await turn('你好'); assert.equal(streamed,'你好，这是 PPA。'); assert.ok(!streamed.includes('PRIVATE_REASONING')); pass('chinese_stream_without_private_reasoning');
+  await turn('你好'); assert.equal(streamed,'你好，这是 PPA。'); assert.ok(!streamed.includes('PRIVATE_REASONING')); assert.deepEqual(lightweightTools,['activate_capability']); pass('chinese_stream_without_private_reasoning');
   const first = session.runtime!.conversation_id; const history = await session.history(); assert.ok(history.some(m => m.text === '你好')); assert.ok(history.some(m => m.text === streamed)); pass('native_history');
   await session.open(); assert.notEqual(session.runtime!.conversation_id, first); await session.open(first); pass('new_and_resume_same_agent');
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -58,9 +89,9 @@ try {
     if (approval.tool === 'capture_screen') { screenApproval = true; return; }
     void session!.approve(approval.id, mode === 'allow');
   });
-  mode='screen';count=0;await turn('看看我的屏幕'); assert.equal(sawScreenTool,true); assert.equal(sawScreenImage,true); assert.equal(screenApproval,false); pass('screen_tool_runs_without_separate_approval');
-  mode='allow';count=0;await turn('写入测试文件'); assert.equal(readFileSync(join(p.workspace,'allow.txt'),'utf8'),'PPA_NATIVE_WRITE'); pass('approve_real_file_tool');
-  mode='deny';count=0;await turn('拒绝测试文件'); assert.equal(existsSync(join(p.workspace,'deny.txt')),false); pass('deny_real_file_tool');
+  mode='screen';count=0;screenToolIssued=false;await turn('看看我的屏幕'); assert.equal(sawScreenTool,true,'expanded request exposes capture_screen'); assert.equal(sawScreenImage,true,'capture result returns an image to the model'); assert.equal(screenApproval,false,'trusted screen capture does not prompt'); assert.ok(expandedScreenTools.includes('capture_screen'),'screen group includes capture_screen'); assert.ok(!expandedScreenTools.includes('Bash'),'screen group excludes Bash'); pass('screen_capability_routes_to_real_tool_without_separate_approval');
+  mode='allow';count=0;fileToolIssued=false;await turn('写入测试文件'); assert.equal(readFileSync(join(p.workspace,'allow.txt'),'utf8'),'PPA_NATIVE_WRITE'); pass('approve_real_file_tool');
+  mode='deny';count=0;fileToolIssued=false;await turn('拒绝测试文件'); assert.equal(existsSync(join(p.workspace,'deny.txt')),false); pass('deny_real_file_tool');
   assert.equal(session.child!.pid, runtimePid); pass('consecutive_turns_reuse_runtime_after_cleanup');
   const untilMode = async (want: 'standard' | 'acceptEdits' | 'unrestricted' | 'strict', label: string) => {
     for (let i = 0; i < 50 && session!.mode !== want; i++) await new Promise(r => setTimeout(r, 100));
@@ -69,9 +100,16 @@ try {
   await session.setMode('acceptEdits'); await untilMode('acceptEdits', 'mode acceptEdits');
   await session.setMode('standard'); await untilMode('standard', 'mode standard');
   pass('permission_mode_switch');
-  mode='cancel';count=0; const textReady=once(session,'text'), ended=once(session,'done'); await session.send('中断测试'); await textReady;
+  await session.setResponseMode('adaptive');assert.equal(session.responseMode,'adaptive');
+  mode='adaptive-opening';count=0;streamed='';await turn('我很纠结，请帮我仔细比较');assert.equal(sawDeliberate,true);assert.equal(streamed,'这件事确实让你很为难。接下来先确认约束，再比较证据。');pass('adaptive_opening_then_private_deliberation_without_repetition');
+  mode='adaptive-silent';count=0;streamed='';await turn('请严谨判断');assert.equal(streamed,'谨慎结论：目前证据只支持有限判断。');pass('adaptive_silent_deliberation_then_answer');
+  mode='chat';count=0;streamed='';await turn('简单问候');assert.equal(streamed,'你好，这是 PPA。');pass('adaptive_direct_reply_without_deliberation');
+  mode='cancel';count=0;streamed='';let doneCount=0;
+  const replacementEnded=new Promise<void>(resolve=>{const listener=()=>{doneCount++;if(doneCount===2){session!.off('done',listener);resolve();}};session!.on('done',listener);});
+  const textReady=once(session,'text');await session.send('中断测试');await textReady;
   await session.setMode('unrestricted'); await untilMode('unrestricted','mode changes while thinking');
-  await session.stop(); await ended; assert.equal(session.busy,false); pass('permission_mode_switch_while_thinking_and_cancel_stream');
+  mode='chat';await session.interruptAndSend('打断后的新问题');await replacementEnded;assert.equal(session.busy,false);
+  const replacedHistory=await session.history();assert.equal(replacedHistory.filter(message=>message.role==='user'&&message.text==='打断后的新问题').length,1);assert.ok(streamed.endsWith('你好，这是 PPA。'));pass('permission_mode_switch_and_interrupt_sends_new_turn_once');
   const beforeRestart = count; await session.close(); session = new PpaSession(p); await session.start(c); assert.equal(count,beforeRestart); assert.equal(session.runtime!.conversation_id,first); assert.equal(session.mode,'unrestricted'); pass('restart_without_input_replay_and_mode_persists');
   mode='chat'; let persisted=false; await session.changeModel({...c,modelId:'fixture2'},()=>{persisted=true;}); assert.ok(persisted); await turn('切换模型后'); assert.equal(model,'fixture2'); pass('model_switch_keeps_identity_and_conversation');
   await session.close(); server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve()));

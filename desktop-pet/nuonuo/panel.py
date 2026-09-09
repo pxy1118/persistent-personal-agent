@@ -92,6 +92,9 @@ class Panel(QWidget):
         self.mode=QComboBox()
         for label,value in [('标准审批','standard'),('自动批准编辑','acceptEdits'),('全部免确认','unrestricted'),('严格审批','strict')]: self.mode.addItem(label,value)
         self.mode.activated.connect(lambda i:self.bridge.request('mode',{'mode':self.mode.itemData(i)})); row.addWidget(self.mode)
+        self.rhythm=QComboBox()
+        for label,value in [('原生节奏','native'),('自适应节奏','adaptive')]: self.rhythm.addItem(label,value)
+        self.rhythm.activated.connect(lambda i:self.bridge.request('rhythm',{'mode':self.rhythm.itemData(i)})); row.addWidget(self.rhythm)
         row.addStretch()
         stop=QPushButton('停止'); stop.clicked.connect(lambda:self.bridge.request('stop')); row.addWidget(stop)
         self.send_button=QPushButton('发送'); self.send_button.setObjectName('primary'); self.send_button.clicked.connect(self.send); row.addWidget(self.send_button)
@@ -135,14 +138,22 @@ class Panel(QWidget):
             self.connection.setText(state+'  ·  '+self.status.get('model',''))
             self.mode.setCurrentIndex(max(0,self.mode.findData(self.status.get('mode','standard'))))
             self.mode.setEnabled(bool(self.status.get('online')))
+            self.rhythm.setCurrentIndex(max(0,self.rhythm.findData(self.status.get('responseMode','native'))))
+            self.rhythm.setEnabled(bool(self.status.get('online')) and not self.status.get('busy'))
             self.pending=self.status.get('pending',[]); self.show_approval()
-            self.send_button.setEnabled(not self.status.get('busy') and not self.sending)
+            self.send_button.setEnabled(bool(self.status.get('online')) and not self.sending)
             if event=='ready': self.bridge.request('history',callback=self.history_result)
         elif event=='text': self.stream+=str(data); self.schedule()
         elif event=='mode':
             self.status['mode']=str(data)
             self.mode.setCurrentIndex(max(0,self.mode.findData(str(data))))
         elif event=='thinking': self.connection.setText('正在思考…')
+        elif event=='phase':
+            phase=(data or {}).get('phase')
+            self.connection.setText({'response':'正在回应…','thinking':'正在认真想…','tool':'正在执行工具…','approval':'等待确认…'}.get(phase,self.connection.text()))
+        elif event=='responseMode':
+            self.status['responseMode']=str(data)
+            self.rhythm.setCurrentIndex(max(0,self.rhythm.findData(str(data))))
         elif event=='connecting': self.connection.setText('正在接入当前会话…')
         elif event=='tool':
             self.flush(); self.connection.setText('正在执行：'+str(data.get('name') or '工具') if data.get('status')=='running' else '正在继续…'); self.schedule()
@@ -178,18 +189,18 @@ class Panel(QWidget):
     def send(self):
         text=self.input.toPlainText().strip()
         if (not text and not self.image_path) or self.sending:return
-        if self.status.get('busy'):
-            self.line('提示','正在回复。请等待或停止，输入不会排队。'); return
         from .companion import local_command
         if not self.image_path and local_command(text):
             self.input.clear(); self.submitted.emit(local_command(text)); self.line('你',text); return
-        payload={'text':text}
-        if self.image_path: payload['image']=self.image_path
-        self.line('你',text+('\n📎 '+self.image_path if self.image_path else ''))
+        payload={'text':text}; image=self.image_path
+        if image: payload['image']=image
+        self.line('你',text+('\n📎 '+image if image else ''))
         self.input.clear(); self.clear_image(); self.sending=True; self.send_button.setEnabled(False)
         def sent(result,error):
-            self.sending=False; self.send_button.setEnabled(not self.status.get('busy'))
-            if error and not self.input.toPlainText(): self.input.setPlainText(text)
+            self.sending=False; self.send_button.setEnabled(bool(self.status.get('online')))
+            if error:
+                if not self.input.toPlainText(): self.input.setPlainText(text)
+                if image and not self.image_path:self.image_path=image;self.attachment.setText('图片：'+image+'  ×');self.attachment.show()
         self.bridge.request('send',payload,sent)
 
     def history_result(self,result,error):

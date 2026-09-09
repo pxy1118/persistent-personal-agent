@@ -9,9 +9,9 @@ export type TuiState = {
   online: boolean; modelReady: boolean; mode: string; approval?: { tool: string; args: string; id: string };
   menu?: Menu; editor?: { path: string; text: string }; closing: boolean;
 };
-export type TuiActions = { submit: (text: string) => void; stop: () => void; quit: () => void; dismiss: () => void; save: (text: string) => void; cycleMode: (dir: number) => void };
+export type TuiActions = { submit: (text: string) => boolean | void | Promise<boolean | void>; stop: () => void; quit: () => void; dismiss: () => void; save: (text: string) => void; cycleMode: (dir: number) => void };
 export const commands = [
-  ['/help','命令与快捷键'],['/new','开始新对话'],['/sessions','切换会话'],['/model','切换模型配置'],['/mode','权限模式'],['/image','发送图片'],['/persona','查看人格'],['/persona edit','编辑人格'],['/memory','查看与编辑记忆'],['/history','查看对话历史'],['/status','连接与工作区'],['/reconnect','重新连接模型'],['/quit','退出 PPA'],
+  ['/help','命令与快捷键'],['/new','开始新对话'],['/sessions','切换会话'],['/model','切换模型配置'],['/rhythm','回复节奏'],['/mode','权限模式'],['/image','发送图片'],['/persona','查看人格'],['/persona edit','编辑人格'],['/memory','查看与编辑记忆'],['/history','查看对话历史'],['/status','连接与工作区'],['/reconnect','重新连接模型'],['/quit','退出 PPA'],
 ];
 const accent = '#88cbd4', muted = '#868b97';
 function Spinner(){const [frame,setFrame]=useState(0);useEffect(()=>{const timer=setInterval(()=>setFrame(n=>(n+1)%10),100);return()=>clearInterval(timer);},[]);return <Text>{['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'][frame]}</Text>;}
@@ -62,7 +62,7 @@ const EntryRow = memo(function EntryRow({entry}:{entry:Entry}) {
 });
 
 export function TuiView({initial,subscribe,actions}:{initial:TuiState;subscribe:(f:(s:TuiState)=>void)=>()=>void;actions:TuiActions}) {
-  const [state,setState]=useState(initial), [draft,setDraft]=useState(''), [selected,setSelected]=useState(0), [allow,setAllow]=useState(false), [confirmQuit,setConfirmQuit]=useState(false);
+  const [state,setState]=useState(initial), [draft,setDraft]=useState(''), [selected,setSelected]=useState(0), [allow,setAllow]=useState(false), [confirmQuit,setConfirmQuit]=useState(false), [submitting,setSubmitting]=useState(false);
   const {stdout}=useStdout(); const [width,setWidth]=useState(stdout.columns||80);
   useEffect(()=>subscribe(setState),[subscribe]);
   useEffect(()=>{const resize=()=>setWidth(stdout.columns||80);stdout.on('resize',resize);return()=>{stdout.off('resize',resize);};},[stdout]);
@@ -74,10 +74,12 @@ export function TuiView({initial,subscribe,actions}:{initial:TuiState;subscribe:
   const items=state.menu?.items??suggested;
   const index=Math.min(selected,Math.max(0,items.length-1));
   const submit=()=>{
-    if(state.busy||state.closing)return;
+    if(state.closing||submitting)return;
     const value=items.length&&draft.startsWith('/')&&!commands.some(([c])=>c===draft)?items[index]!.command:draft;
-    if(!value.trim())return;setDraft('');setSelected(0);actions.submit(value);
+    if(!value.trim())return;setSubmitting(true);
+    void Promise.resolve(actions.submit(value)).then(ok=>{if(ok!==false){setDraft('');setSelected(0);}}).finally(()=>setSubmitting(false));
   };
+  const submitApproval=(decision:string)=>{if(submitting)return;setSubmitting(true);void Promise.resolve(actions.submit(decision)).then(ok=>{if(ok!==false)setDraft('');}).finally(()=>setSubmitting(false));};
   useInput((input,key)=>{
     if(confirmQuit){
       if(!key.ctrl&&!key.meta&&input.toLowerCase()==='y')actions.quit();
@@ -88,16 +90,15 @@ export function TuiView({initial,subscribe,actions}:{initial:TuiState;subscribe:
       if(state.editor&&hasUnsavedEditor(state.editor.text,draft)){setConfirmQuit(true);return;}
       state.busy?actions.stop():actions.quit();return;
     }
-    if(key.escape){if(state.editor||state.menu)actions.dismiss();else if(state.approval)actions.submit('n');else if(state.busy)actions.stop();else setDraft('');return;}
+    if(key.escape){if(state.editor||state.menu)actions.dismiss();else if(state.approval||state.busy)actions.stop();else setDraft('');return;}
     if(key.tab&&state.busy&&!state.approval&&!state.menu&&!state.editor){actions.cycleMode(key.shift?-1:1);return;}
     if(state.approval){
-      if(key.leftArrow||key.rightArrow||key.upArrow||key.downArrow)setAllow(a=>!a);
-      else if(key.return)actions.submit(allow?'y':'n');
-      else if(input.toLowerCase()==='y'||input.toLowerCase()==='n')actions.submit(input.toLowerCase());
+      if(!draft&&(key.leftArrow||key.rightArrow||key.upArrow||key.downArrow))setAllow(a=>!a);
+      else if(input.toLowerCase()==='y'||input.toLowerCase()==='n')submitApproval(input.toLowerCase());
     } else if(state.menu){
       if(key.upArrow)setSelected(n=>(n-1+items.length)%items.length);
       else if(key.downArrow)setSelected(n=>(n+1)%items.length);
-      else if(key.return&&items[index]){setDraft('');actions.submit(items[index]!.command);}
+      else if(key.return&&items[index]){setSubmitting(true);void Promise.resolve(actions.submit(items[index]!.command)).then(ok=>{if(ok!==false)setDraft('');}).finally(()=>setSubmitting(false));}
     }
   });
   const start=Math.max(0,index-5), shown=items.slice(start,start+7);
@@ -114,7 +115,10 @@ export function TuiView({initial,subscribe,actions}:{initial:TuiState;subscribe:
       <Text bold color="yellow">需要你的确认 · {state.approval.tool}</Text>
       <Box marginY={1}><Text wrap="wrap">{state.approval.args}</Text></Box>
       <Box gap={3}><Text color={allow?accent:muted} bold={allow}>{allow?'❯ ':'  '}允许本次</Text><Text color={!allow?accent:muted} bold={!allow}>{!allow?'❯ ':'  '}拒绝</Text></Box>
-      <Text color={muted}>← → 选择 · Enter 确认 · y / n 快捷操作 · 不授予长期权限</Text>
+      <Box borderStyle="single" borderTop borderBottom borderLeft={false} borderRight={false} borderColor={muted} marginTop={1} gap={1}>
+        <Text color={accent}>›</Text><Box flexGrow={1}><Composer value={draft} setValue={setDraft} focus={!state.closing&&!submitting} onSubmit={()=>{if(draft.trim())submit();else submitApproval(allow?'y':'n');}} suggesting={false} onNavigate={()=>{}} onTab={()=>false} cycleMode={actions.cycleMode}/></Box>
+      </Box>
+      <Text color={muted}>空输入 Enter 确认 · y / n 快捷操作 · 输入新消息并 Enter 可打断旧回合 · Esc 只中断</Text>
     </Box>:state.editor?(confirmQuit?<Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
       <Text bold color="yellow">放弃未保存的编辑并退出？</Text>
       <Box marginY={1}><Text wrap="wrap">{state.editor.path}</Text></Box>
@@ -130,13 +134,13 @@ export function TuiView({initial,subscribe,actions}:{initial:TuiState;subscribe:
         <Text color={muted}>↑ ↓ 选择 · {state.menu?'Enter 打开 · Esc 返回':'Tab 补全 · Shift+Tab 权限 · Enter 执行'}</Text>
       </Box>}
       {!state.menu&&<Box borderStyle="single" borderTop borderBottom borderLeft={false} borderRight={false} borderColor={state.busy?muted:accent} paddingX={2} marginTop={1} gap={1}>
-        <Text color={accent}>›</Text><Box flexGrow={1}><Composer value={draft} setValue={setDraft} focus={!state.busy&&!state.closing} onSubmit={submit} suggesting={items.length>0} onNavigate={n=>setSelected(i=>(i+n+items.length)%items.length)} onTab={()=>{if(items[index]){setDraft(items[index]!.command);return true;}return false;}} cycleMode={actions.cycleMode}/></Box>
+        <Text color={accent}>›</Text><Box flexGrow={1}><Composer value={draft} setValue={setDraft} focus={!state.closing&&!submitting} onSubmit={submit} suggesting={items.length>0} onNavigate={n=>setSelected(i=>(i+n+items.length)%items.length)} onTab={()=>{if(items[index]){setDraft(items[index]!.command);return true;}return false;}} cycleMode={actions.cycleMode}/></Box>
       </Box>}
     </>}
     <Box justifyContent="space-between" paddingX={2} marginTop={state.menu?1:0}>
       <Text color={state.modelReady?accent:'yellow'}>● {state.closing?'正在退出':state.modelReady?permissionModeLabel(state.mode):'模型离线'}</Text>
       <Text color={muted} wrap="truncate-start">{shortModel(state.model)} · {state.name}</Text>
     </Box>
-    <Box paddingX={2} marginBottom={1}><Text color={muted}>{state.editor?'人格与记忆由原生存储保存 · 未保存时 Ctrl+C 需确认':state.approval?'请核对操作参数':state.busy?'回复中 · Tab / Shift+Tab 仍可切换权限 · Esc 中断':'Enter 发送 · Shift+Enter 换行 · Tab / Shift+Tab 切换权限 · /help 帮助'}</Text></Box>
+    <Box paddingX={2} marginBottom={1}><Text color={muted}>{state.editor?'人格与记忆由原生存储保存 · 未保存时 Ctrl+C 需确认':state.approval?'请核对操作参数':state.busy?'回复中可继续输入 · Enter 打断并发送 · Esc 只中断':'Enter 发送 · Shift+Enter 换行 · Tab / Shift+Tab 切换权限 · /help 帮助'}</Text></Box>
   </Box>;
 }

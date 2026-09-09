@@ -9,7 +9,7 @@ interface FakeLlamaCppModelEntry {
   inputModalities?: string[];
   nCtx?: number;
   nCtxTrain?: number;
-  props?: { vision?: boolean; nCtx?: number };
+  props?: { vision?: boolean; nCtx?: number; chatTemplate?: string };
 }
 
 interface FakeLlamaCppState {
@@ -81,6 +81,9 @@ function fakeLlamaCppFetch(state: FakeLlamaCppState): typeof fetch {
       if (!model?.props) return new Response("not found", { status: 404 });
       return Response.json({
         modalities: { vision: model.props.vision ?? false, audio: false },
+        ...(model.props.chatTemplate
+          ? { chat_template: model.props.chatTemplate }
+          : {}),
         ...(model.props.nCtx
           ? { default_generation_settings: { n_ctx: model.props.nCtx } }
           : {}),
@@ -268,6 +271,44 @@ describe("createLlamaCppPiProvider", () => {
     expect(provider.getModels()[0]?.input).toEqual(["text", "image"]);
     expect(provider.getModels()[0]?.contextWindow).toBe(24576);
     expect(state.requests).toContain("/props?model=partial-metadata.gguf");
+  });
+
+  test("publishes request-level Qwen thinking controls only when the template advertises them", async () => {
+    const provider = createLlamaCppPiProvider({
+      baseURL: "http://localhost:8080/v1",
+      fetchImpl: fakeLlamaCppFetch({
+        models: [
+          {
+            id: "thinking.gguf",
+            status: "loaded",
+            inputModalities: ["text"],
+            props: {
+              chatTemplate:
+                "{% if enable_thinking %}<think>{{ reasoning_content }}{% endif %}",
+            },
+          },
+          {
+            id: "plain.gguf",
+            status: "loaded",
+            inputModalities: ["text"],
+            props: { chatTemplate: "{{ messages }}" },
+          },
+        ],
+        requests: [],
+      }),
+    });
+    await provider.refreshModels?.(testRefreshContext());
+
+    const thinking = provider.getModels().find((model) => model.id === "thinking.gguf");
+    expect(thinking?.reasoning).toBe(true);
+    expect(thinking?.compat).toMatchObject({
+      thinkingFormat: "qwen-chat-template",
+      thinkingTokenBudgetField: "thinking_budget_tokens",
+    });
+
+    const plain = provider.getModels().find((model) => model.id === "plain.gguf");
+    expect(plain?.reasoning).toBe(false);
+    expect(plain?.compat).not.toHaveProperty("thinkingTokenBudgetField");
   });
 
   test("falls back to last-known models when metadata becomes unavailable", async () => {

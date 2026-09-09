@@ -16,13 +16,17 @@ test('TUI status shows the actual permission mode instead of a hardcoded label',
   assert.match(screen({...base,mode:'strict'}),/严格审批/);
 });
 test('TUI keeps permission switching visible while the model is thinking',()=>{
-  assert.match(screen({...base,busy:true,task:'正在思考'}),/Tab \/ Shift\+Tab 仍可切换权限/);
+  const text=screen({...base,busy:true,task:'正在思考'});
+  assert.match(text,/回复中可继续输入/);
+  assert.match(text,/Enter 打断并发送/);
+  assert.match(text,/Esc 只中断/);
 });
 test('TUI has distinct model menu and approval panels',()=>{
   const menu=screen({...base,menu:{title:'选择模型',items:[{label:'ornith',detail:'本地模型',command:'/model ornith'}]}});
   assert.match(menu,/选择模型/);assert.match(menu,/↑ ↓/);
   const approval=screen({...base,approval:{id:'a',tool:'写入文件',args:'file.txt'}});
   assert.match(approval,/需要你的确认/);assert.match(approval,/❯ 拒绝/);assert.match(approval,/允许本次/);
+  assert.match(approval,/输入新消息并 Enter 可打断旧回合/);
 });
 test('Chinese cursor insertion, deletion, paste and multiline navigation preserve content',()=>{
   assert.deepEqual(editInput('你好🙂',1,'很',{}),{value:'你很好🙂',cursor:2});

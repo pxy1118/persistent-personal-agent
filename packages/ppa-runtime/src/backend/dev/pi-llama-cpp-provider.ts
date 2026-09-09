@@ -20,6 +20,7 @@ export interface LlamaCppPiProviderOptions {
 interface LlamaCppServerProps {
   vision?: boolean;
   contextLength?: number;
+  thinking?: boolean;
 }
 
 function parseLlamaCppProps(data: unknown): LlamaCppServerProps {
@@ -27,6 +28,7 @@ function parseLlamaCppProps(data: unknown): LlamaCppServerProps {
   const record = data as {
     modalities?: unknown;
     default_generation_settings?: unknown;
+    chat_template?: unknown;
   };
   const modalities =
     record.modalities && typeof record.modalities === "object"
@@ -38,12 +40,16 @@ function parseLlamaCppProps(data: unknown): LlamaCppServerProps {
       ? (record.default_generation_settings as { n_ctx?: unknown })
       : undefined;
   const contextLength = generationSettings?.n_ctx;
+  const chatTemplate = record.chat_template;
   return {
     ...(typeof modalities?.vision === "boolean"
       ? { vision: modalities.vision }
       : {}),
     ...(typeof contextLength === "number" && contextLength > 0
       ? { contextLength }
+      : {}),
+    ...(typeof chatTemplate === "string"
+      ? { thinking: /enable_thinking|<think>|reasoning_content/.test(chatTemplate) }
       : {}),
   };
 }
@@ -144,18 +150,25 @@ function parseLlamaCppNativeModels(
  */
 function llamaCppModelMetadata(
   id: string,
-  input: { vision?: boolean; contextLength?: number },
+  input: { vision?: boolean; contextLength?: number; thinking?: boolean },
 ): LocalEndpointModelMetadata {
   const contextLength =
     input.contextLength ?? LOCAL_ENDPOINT_DEFAULT_CONTEXT_WINDOW;
   return {
     id,
     ...(input.vision !== undefined ? { vision: input.vision } : {}),
+    ...(input.thinking !== undefined ? { thinking: input.thinking } : {}),
     contextLength,
     maxTokens: contextLength,
     compat: {
       supportsDeveloperRole: false,
       supportsReasoningEffort: false,
+      ...(input.thinking
+        ? {
+            thinkingFormat: "qwen-chat-template" as const,
+            thinkingTokenBudgetField: "thinking_budget_tokens" as const,
+          }
+        : {}),
       maxTokensField: "max_tokens",
       supportsStore: false,
       supportsUsageInStreaming: false,
@@ -186,30 +199,29 @@ const llamaCppDiscover: LocalEndpointDiscover = async (context) => {
     if (native) {
       return Promise.all(
         native.map(async (metadata) => {
-          if (
-            metadata.vision !== undefined &&
-            metadata.contextLength !== undefined
-          ) {
-            return context.buildModel(metadata);
-          }
           try {
             const props = parseLlamaCppProps(
               await context.fetchJson(
                 `${context.nativeBaseURL}/props?model=${encodeURIComponent(metadata.id)}`,
               ),
             );
-            return context.buildModel({
-              ...metadata,
-              ...(metadata.vision === undefined && props.vision !== undefined
-                ? { vision: props.vision }
-                : {}),
-              ...(metadata.contextLength === undefined && props.contextLength
-                ? {
-                    contextLength: props.contextLength,
-                    maxTokens: props.contextLength,
-                  }
-                : {}),
-            });
+            return context.buildModel(
+              llamaCppModelMetadata(metadata.id, {
+                ...(metadata.vision !== undefined
+                  ? { vision: metadata.vision }
+                  : props.vision !== undefined
+                    ? { vision: props.vision }
+                    : {}),
+                ...(metadata.contextLength !== undefined
+                  ? { contextLength: metadata.contextLength }
+                  : props.contextLength
+                    ? { contextLength: props.contextLength }
+                    : {}),
+                ...(props.thinking !== undefined
+                  ? { thinking: props.thinking }
+                  : {}),
+              }),
+            );
           } catch {
             return context.buildModel(metadata);
           }
@@ -235,6 +247,9 @@ const llamaCppDiscover: LocalEndpointDiscover = async (context) => {
             ...(props.vision !== undefined ? { vision: props.vision } : {}),
             ...(props.contextLength
               ? { contextLength: props.contextLength }
+              : {}),
+            ...(props.thinking !== undefined
+              ? { thinking: props.thinking }
               : {}),
           }),
         );

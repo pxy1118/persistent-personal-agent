@@ -4,7 +4,7 @@ import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PpaSession, type MemoryDocument } from './ppa-session.js';
 import { acquireLock } from './lock.js';
-import { locations, readConfig, redact, type LettaConfig } from './ppa-runtime.js';
+import { locations, readConfig, redact, responseModes, type LettaConfig, type ResponseMode } from './ppa-runtime.js';
 import { readProfiles, selectProfile, writeActiveConfig } from './model-profiles.js';
 import { permissionModes, type PermissionMode } from './permission-modes.js';
 
@@ -29,13 +29,13 @@ export class PetBridge {
   private stopping?: Promise<unknown>;
   private documents = new Map<string, MemoryDocument>();
   constructor(readonly session: PpaSession, readonly emit: (event: string, data: unknown) => void) {
-    for (const event of ['text', 'thinking', 'tool', 'approval', 'done', 'notice', 'mode']) {
+    for (const event of ['text', 'thinking', 'phase', 'tool', 'approval', 'done', 'notice', 'mode', 'responseMode']) {
       session.on(event, data => { emit(event, data ?? null); if (event !== 'text' && event !== 'thinking') emit('status', this.status()); });
     }
   }
   status() {
     const s = this.session;
-    return { name:s.name, agentId:s.agentId, conversationId:s.runtime?.conversation_id, model:s.model, online:s.online, modelReady:s.modelReady, busy:s.busy, mode:s.mode, pending:[...s.pending.values()] };
+    return { name:s.name, agentId:s.agentId, conversationId:s.runtime?.conversation_id, model:s.model, online:s.online, modelReady:s.modelReady, busy:s.busy, mode:s.mode, responseMode:s.responseMode, adaptiveUnavailableReason:s.adaptiveUnavailableReason, pending:[...s.pending.values()] };
   }
   async cancelAndWait() { this.cancellation++; await Promise.allSettled([this.settled, this.stopping]); }
   async dispatch(request: PetRequest): Promise<unknown> {
@@ -69,19 +69,24 @@ export class PetBridge {
       if (!permissionModes.includes(p.mode as PermissionMode)) throw new Error('未知权限模式。');
       await s.setMode(p.mode); this.emit('status', this.status()); return this.status();
     }
+    if (request.method === 'rhythm') {
+      if (!responseModes.includes(p.mode as ResponseMode)) throw new Error('未知回复节奏。');
+      await s.setResponseMode(p.mode); this.emit('status', this.status()); return this.status();
+    }
     if (this.commandBusy) throw new Error('上一操作尚未完成。');
     this.commandBusy = true;
     this.settled = new Promise(resolve => { this.settle = resolve; });
     const epoch = this.cancellation;
     try {
-      if (s.busy) throw new Error('正在回复，请等待或停止。输入不会排队。');
       switch (request.method) {
         case 'send': {
           if (typeof p.text !== 'string' || p.text.length > 100000 || (!p.text.trim() && !p.image)) throw new Error('请输入内容。');
           if (p.image !== undefined && typeof p.image !== 'string') throw new Error('无效图片路径。');
           const images = p.image ? [await petImage(p.image)] : [];
           if (epoch !== this.cancellation) throw new Error('已停止，输入未发送，也不会自动重发。');
-          await s.send(p.text || '请看看这张图片。', images); return this.status();
+          const text = p.text || '请看看这张图片。';
+          if (s.busy) await s.interruptAndSend(text, images); else await s.send(text, images);
+          return this.status();
         }
         case 'history': return s.history();
         case 'sessions': return s.conversations();

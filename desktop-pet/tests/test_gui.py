@@ -51,8 +51,8 @@ def test_widget_input_approval_priority_and_lifecycle(tmp_path,monkeypatch):
         assert panel.mode.isEnabled()
         pet.receive('mode','unrestricted')
         assert panel.mode.currentData()=='unrestricted'
-        panel.input.setPlainText('不能排队'); panel.send()
-        assert calls[-1][0]=='approve'
+        panel.input.setPlainText('换个话题'); panel.send()
+        assert calls[-1]==('send',{'text':'换个话题'})
         pet.receive('text','你好，');pet.receive('text','已经收到。')
         QTest.qWait(60)
         assert '你好，已经收到。' in panel.history.toPlainText()

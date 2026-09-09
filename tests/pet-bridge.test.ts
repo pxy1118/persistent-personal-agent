@@ -8,25 +8,35 @@ import { PetBridge, petImage } from '../src/pet-bridge.js';
 import type { PpaSession } from '../src/ppa-session.js';
 
 class Session extends EventEmitter {
-  busy=false; online=true; modelReady=true; name='测试助手'; mode='standard'; pending=new Map();
-  sent: any[]=[]; written=''; approved:any[]=[];
+  busy=false; online=true; modelReady=true; name='测试助手'; mode='standard'; responseMode='native'; adaptiveUnavailableReason=''; pending=new Map();
+  sent: any[]=[]; interrupted: any[]=[]; written=''; approved:any[]=[];
   async send(...args:any[]) { this.sent=args; this.busy=true; }
+  async interruptAndSend(...args:any[]) { this.interrupted=args; this.sent=args; this.busy=true; }
   async stop() { this.busy=false; }
   async restart() {}
   async approve(...args:any[]) { this.approved=args; }
   async setMode(mode:string) { this.mode=mode; this.emit('mode',mode); }
+  async setResponseMode(mode:string) { this.responseMode=mode; this.emit('responseMode',mode); }
   async memories() { return [{path:'system/persona.md',content:'---\ndescription: original\n---\n正文',hash:'version1'}]; }
   async writeMemory(_doc:unknown,content:string) { this.written=content; }
 }
-test('pet bridge rejects raw commands, overlapping sends, and invalid approvals', async()=>{
+test('pet bridge rejects raw commands and invalid approvals, and a new send interrupts the old turn', async()=>{
   const s=new Session(), b=new PetBridge(s as unknown as PpaSession,()=>{});
   const call=(method:string,params:any={})=>b.dispatch({id:'1',method,params});
   await assert.rejects(call('request',{type:'raw'}),/未知/);
   await assert.rejects(call('approve',{id:'x',allow:'yes'}),/无效/);
   await call('send',{text:'你好'}); assert.deepEqual(s.sent,['你好',[]]);
-  await assert.rejects(call('send',{text:'再次输入'}),/正在回复/);
+  await call('send',{text:'再次输入'}); assert.deepEqual(s.interrupted,['再次输入',[]]);
   await call('approve',{id:'x',allow:false}); assert.deepEqual(s.approved,['x',false]);
   await call('stop'); assert.equal(s.busy,false);
+});
+test('pet bridge exposes and switches the shared reply rhythm',async()=>{
+  const s=new Session(),b=new PetBridge(s as unknown as PpaSession,()=>{});
+  const status:any=await b.dispatch({id:'status',method:'status'});
+  assert.equal(status.responseMode,'native');
+  await b.dispatch({id:'rhythm',method:'rhythm',params:{mode:'adaptive'}});
+  assert.equal(s.responseMode,'adaptive');
+  await assert.rejects(b.dispatch({id:'rhythm',method:'rhythm',params:{mode:'random'}}),/未知回复节奏/);
 });
 test('pet bridge changes permission mode while a reply is in progress',async()=>{
   const s=new Session();s.busy=true;

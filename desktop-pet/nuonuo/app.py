@@ -132,9 +132,6 @@ class PetWindow(BaseWindow):
 
     def show_quick_input(self):
         if self.shutting_down:return
-        if self.state.get('busy'):
-            self.bubble('我还在回复，稍等一下；也可以打开完整聊天后停止。',6,True)
-            return
         self.head_bubble.hide()
         self.speech_until=0;self.protected_until=0;self.mirrored_speech=self.speech
         self.quick_input.open()
@@ -147,13 +144,8 @@ class PetWindow(BaseWindow):
         if command:
             self.command(command)
             return
-        if self.state.get('busy'):
-            self.quick_input.open(text)
-            self.bubble('我还在回复，输入已经替你保留。',5,True)
-            return
         self.quick_turn=True;self.reply_stream='';self.protected_until=0
         self.panel.line('你',text)
-        self.bubble('让我想想…',3600,True)
         def sent(result,error):
             if error:
                 self.quick_turn=False
@@ -205,11 +197,13 @@ class PetWindow(BaseWindow):
             if self.tray:self.tray.setToolTip(self.state.get('name','PPA')+' · 点击桌宠聊天')
             if self.state.get('pending'):
                 self.bubble('有一项操作需要你确认。',3600,True)
-            elif self.state.get('busy') and not self.reply_stream:
-                self.protected_until=0; self.bubble('我在处理，稍等一下。',3600,True)
             elif self.protected_until>time.monotonic()+60:
                 self.protected_until=0; self.speech_until=0
         elif event=='thinking':self.actions_queue.put('status','thinking',3)
+        elif event=='phase':
+            phase=(data or {}).get('phase')
+            if phase=='thinking':self.actions_queue.put('status','thinking',3)
+            elif phase=='tool':self.actions_queue.put('status','working',3)
         elif event=='text':
             self.reply_stream+=str(data)
             self.speech_until=time.monotonic()+3600

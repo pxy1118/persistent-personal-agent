@@ -38,6 +38,7 @@ const help = `
   /memory        列出记忆文件；/memory 序号 查看
   /memory edit 序号  编辑记忆，保存到原生存储
   /model         列出已有模型配置；/model 配置名 切换
+  /rhythm        查看回复节奏；/rhythm native|adaptive 切换
   /mode          查看并切换权限模式（标准 / 自动批准编辑 / 严格等）
   /image         发送图片：/image "图片路径" [问题]
   /status        当前助手、模型和连接状态
@@ -48,7 +49,7 @@ const help = `
   工具审批       输入 y 仅允许本次，n 拒绝
   记忆编辑       Ctrl+S 保存，Esc 放弃，Enter 换行
 `;
-const toolLabel = (name: string) => ({ Read: '读取文件', Write: '写入文件', Edit: '编辑文件', Bash: '执行命令', memory: '更新记忆', Agent: '调用助手', Skill: '使用技能', capture_screen: '读取屏幕' }[name] ?? name);
+const toolLabel = (name: string) => ({ Read: '读取文件', Write: '写入文件', Edit: '编辑文件', Bash: '执行命令', memory: '更新记忆', Agent: '调用助手', Skill: '使用技能', capture_screen: '读取屏幕', deliberate: '认真想想' }[name] ?? name);
 
 export class PpaTerminal {
   private commandBusy = false;
@@ -81,15 +82,18 @@ export class PpaTerminal {
     const handlers:Record<string,(...args:any[])=>void>={
       text:(text:string)=>{this.stream+=safeTerminal(text);this.refresh();},
       thinking:()=>{this.task='正在思考';this.refresh();},
+      phase:({phase}:{phase:string})=>{this.task=phase==='thinking'?'正在认真想':phase==='tool'?'正在执行工具':phase==='approval'?'等待确认':phase==='response'?'正在回应':'';this.refresh();},
       tool:({name,status})=>{this.endStream();this.task=status==='running'?'正在'+toolLabel(name||'执行工具'):'正在继续';this.line((status==='error'?'× 工具失败':status==='running'?'↳ '+toolLabel(name||'执行工具'):'✓ 工具完成'));},
       notice:(text:string)=>this.line('! '+text),
       mode:()=>{ this.line('  权限模式已切换：'+permissionModeLabel(this.session.mode)); this.refresh(); },
+      responseMode:(mode:string)=>{this.line(`  回复节奏已切换：${mode==='adaptive'?'自适应':'原生'}`);this.refresh();},
       approval:(a:ToolApproval)=>{if(!this.approval)this.showApproval(a);},
       done:({reason,error})=>{this.endStream();this.approval=undefined;this.task='';if(error)this.line('! '+error);else if(/interrupt|cancel|abort/.test(reason))this.line('已中断，不会自动重发。');this.refresh();},
     };
     for(const [event,handler] of Object.entries(handlers))this.session.on(event,handler);
     for(const a of this.session.pending.values()){this.approval=a;break;}
-    this.ui=render(createElement(TuiView,{initial:this.snapshot(),subscribe:this.subscribe,actions:{submit:(text:string)=>{this.menu=undefined;void this.accept(text);},stop:()=>{void this.stop();},quit:()=>{void this.quit();},dismiss:()=>{this.menu=undefined;this.editor=undefined;this.refresh();},save:(text:string)=>{void this.saveEditor(text);},cycleMode:(dir:number)=>{const next=cyclePermissionMode(this.session.mode,dir as 1|-1);void this.session.setMode(next).catch(e=>this.line('! '+String(e)));}}}),{stdin:this.input,stdout:this.output,stderr:this.output,exitOnCtrlC:false,patchConsole:false});
+    if(this.session.adaptiveUnavailableReason)this.line('! 已回退到原生回复：'+this.session.adaptiveUnavailableReason);
+    this.ui=render(createElement(TuiView,{initial:this.snapshot(),subscribe:this.subscribe,actions:{submit:(text:string)=>{this.menu=undefined;return this.accept(text);},stop:()=>{void this.stop();},quit:()=>{void this.quit();},dismiss:()=>{this.menu=undefined;this.editor=undefined;this.refresh();},save:(text:string)=>{void this.saveEditor(text);},cycleMode:(dir:number)=>{const next=cyclePermissionMode(this.session.mode,dir as 1|-1);void this.session.setMode(next).catch(e=>this.line('! '+String(e)));}}}),{stdin:this.input,stdout:this.output,stderr:this.output,exitOnCtrlC:false,patchConsole:false});
     await completed;
     for(const [event,handler] of Object.entries(handlers))this.session.off(event,handler);
     this.ui.unmount();
@@ -103,28 +107,39 @@ export class PpaTerminal {
   }
   private async stop(){if(!this.session.busy)return;this.task='正在中断';this.refresh();try{await this.session.stop();}catch(e){this.line('! '+String(e));}this.refresh();}
   private async quit(){if(this.exiting)return;this.exiting=true;this.refresh();try{await this.session.close();}catch(e){this.line('! '+String(e));process.exitCode=1;}this.done?.();}
-  private async accept(raw: string) {
-    if (this.exiting) return;
+  private async accept(raw: string):Promise<boolean> {
+    if (this.exiting) return false;
     const line = raw.trim();
     try {
-      if (['/quit', '/exit', 'exit'].includes(line)) { await this.quit(); return; }
-      if (line === '/stop') { await this.stop(); return; }
-      if (this.commandBusy) { this.line('  当前操作尚未结束，请稍候。'); this.prompt(); return; }
+      if (['/quit', '/exit', 'exit'].includes(line)) { await this.quit(); return true; }
+      if (line === '/stop') { await this.stop(); return true; }
+      if (this.commandBusy) { this.line('  当前操作尚未结束，请稍候。'); this.prompt(); return false; }
       if (this.approval) {
-        if (!['y','n','是','否','允许','拒绝'].includes(line.toLowerCase())) throw new Error('请输入 y 允许本次，或 n 拒绝。');
-        const allow = ['y','是','允许'].includes(line.toLowerCase());
-        await this.session.approve(this.approval.id, allow); this.line(allow ? '  已允许本次操作。' : '  已拒绝本次操作。'); this.approval = undefined;
-        const next = this.session.pending.values().next().value; if (next) this.showApproval(next); this.prompt(); return;
+        if (['y','n','是','否','允许','拒绝'].includes(line.toLowerCase())) {
+          const allow = ['y','是','允许'].includes(line.toLowerCase());
+          await this.session.approve(this.approval.id, allow); this.line(allow ? '  已允许本次操作。' : '  已拒绝本次操作。'); this.approval = undefined;
+          const next = this.session.pending.values().next().value; if (next) this.showApproval(next); this.prompt(); return true;
+        }
+        if (!line) return false;
+        this.commandBusy=true;this.task='正在中断并接话';this.refresh();
+        await this.session.interruptAndSend(line);this.approval=undefined;
+        this.endStream();this.entries.push({id:++this.sequence,role:'user',text:safeTerminal(line)});this.task='正在回应';this.refresh();return true;
       }
-      if (this.editor) return; // 编辑器由界面自己处理（Ctrl+S 保存 / Esc 放弃），不接受命令行提交。
-      if (this.session.busy) throw new Error('正在回复。可按 Escape 中断后再发送，输入不会排队或重放。');
-      if (!line) { this.prompt(); return; }
+      if (this.editor) return false; // 编辑器由界面自己处理（Ctrl+S 保存 / Esc 放弃），不接受命令行提交。
+      if (!line) { this.prompt(); return false; }
+      if (this.session.busy) {
+        if (line.startsWith('/')) throw new Error('回复中只能发送新的聊天内容；Esc 只中断当前回复。');
+        this.commandBusy=true;this.task='正在中断并接话';this.refresh();
+        await this.session.interruptAndSend(line);
+        this.endStream();this.entries.push({id:++this.sequence,role:'user',text:safeTerminal(line)});this.task='正在回应';this.refresh();
+        return true;
+      }
       this.commandBusy = true;
       const [command, ...parts] = line.split(/\s+/), args = parts.join(' ');
       if (command === '/help') this.line(help);
       else if (command === '/status') {
         const c = this.session.config;
-        this.line(`  助手：${this.session.name}\n  模型：${this.session.model}\n  模型服务：${isLocalModelEndpoint(c.modelBaseUrl) ? '本机' : '远程'} · ${c.modelBaseUrl}\n  会话：${this.session.runtime?.conversation_id}\n  权限：${permissionModeLabel(this.session.mode)}\n  后台：${this.session.online ? '已连接' : '离线'} · 模型：${this.session.modelReady ? '已连接' : '离线'}\n  上下文：${c.contextWindow} · 最大输出：${c.maxTokens}\n  工作目录：${this.session.paths.workspace}`);
+        this.line(`  助手：${this.session.name}\n  模型：${this.session.model}\n  模型服务：${isLocalModelEndpoint(c.modelBaseUrl) ? '本机' : '远程'} · ${c.modelBaseUrl}\n  会话：${this.session.runtime?.conversation_id}\n  权限：${permissionModeLabel(this.session.mode)}\n  回复节奏：${this.session.responseMode==='adaptive'?'自适应':'原生'}${this.session.adaptiveUnavailableReason?'（请求的自适应不可用）':''}\n  后台：${this.session.online ? '已连接' : '离线'} · 模型：${this.session.modelReady ? '已连接' : '离线'}\n  上下文：${c.contextWindow} · 最大输出：${c.maxTokens}\n  工作目录：${this.session.paths.workspace}`);
       } else if (command === '/reconnect') {
         this.line('  正在连接模型…'); await this.session.changeModel(readConfig(this.session.paths), () => {}); this.line('  模型已连接，可以继续聊天。');
       } else if (command === '/history') this.printHistory(await this.session.history(), 20);
@@ -140,6 +155,10 @@ export class PpaTerminal {
         const profiles = readProfiles();
         if (!args || args === 'list') { this.menu={title:'选择模型配置',items:Object.entries(profiles).map(([name,c])=>({label:name,detail:`${isLocalModelEndpoint(c.modelBaseUrl) ? '本机' : '远程'} · ${c.modelId ?? '自动选择首个模型'} · ${c.contextWindow} 上下文`,command:`/model ${name}`}))}; }
         else { this.line('  正在验证并切换模型…'); await this.session.changeModel(selectProfile(args, profiles), writeActiveConfig); this.line(`  已切换：${args}`); }
+      } else if (command === '/rhythm') {
+        if(!args)this.menu={title:'回复节奏',items:[{label:'原生',detail:this.session.responseMode==='native'?'当前模式':'使用模型服务默认思考方式',command:'/rhythm native'},{label:'自适应',detail:this.session.responseMode==='adaptive'?'当前模式':'先快速回应，需要时再认真想',command:'/rhythm adaptive'}]};
+        else if(args==='native'||args==='adaptive'){this.line('  正在验证并切换回复节奏…');await this.session.setResponseMode(args);}
+        else throw new Error('请输入 /rhythm native 或 /rhythm adaptive。');
       } else if (command === '/mode') {
         if (!args) this.menu={title:'权限模式',items:permissionModes.map(m=>({label:permissionModeLabel(m),detail:m===this.session.mode?'当前模式':permissionModeDetail(m),command:`/mode ${m}`}))};
         else { const m = args as PermissionMode; if (!permissionModes.includes(m)) throw new Error(`未知权限模式：${args}。请输入 /mode 查看。`); await this.session.setMode(m); this.line(`  正在切换权限模式：${permissionModeLabel(m)}`); }
@@ -173,7 +192,8 @@ export class PpaTerminal {
       } else if (command.startsWith('/')) throw new Error('未知 PPA 命令。输入 /help 查看。');
       else { this.entries.push({id:++this.sequence,role:'user',text:safeTerminal(raw)}); this.task='正在回应'; this.refresh(); await this.session.send(raw); }
       this.prompt();
-    } catch (e) { this.line(`  ! ${e instanceof Error ? e.message : String(e)}`); this.prompt(); }
+      return true;
+    } catch (e) { this.line(`  ! ${e instanceof Error ? e.message : String(e)}`); this.prompt(); return false; }
     finally { this.commandBusy = false; this.refresh(); }
   }
 }

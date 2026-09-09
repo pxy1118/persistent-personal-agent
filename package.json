@@ -31,6 +31,8 @@
     "smoke:terminal": "tsx scripts/ppa-tui-smoke.ts",
     "smoke:image": "tsx scripts/ppa-image-smoke.ts",
     "smoke:screen": "tsx scripts/ppa-screen-smoke.ts",
+    "smoke:adaptive": "tsx scripts/adaptive-thinking-smoke.ts",
+    "smoke:capabilities": "tsx scripts/capability-routing-smoke.ts",
     "model": "tsx src/ppa-cli.ts model",
     "doctor": "tsx src/ppa-cli.ts doctor",
     "build": "tsc --noEmit",
